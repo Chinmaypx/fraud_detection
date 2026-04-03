@@ -135,18 +135,19 @@ class AutoencoderDetector(nn.Module):
 def get_class_weights(y_train):
     """
     Compute class weights for imbalanced dataset
-    
+
     In fraud detection, we want to heavily penalize missing fraud (false negatives)
     """
     n_samples = len(y_train)
-    n_fraud = sum(y_train == 1) if isinstance(y_train, np.ndarray) else y_train.sum()
+    n_fraud = int(sum(y_train == 1)) if isinstance(y_train, np.ndarray) else int(y_train.sum())
     n_legit = n_samples - n_fraud
-    
+
     # Weight inversely proportional to class frequency
     weight_legit = n_samples / (2.0 * n_legit)
     weight_fraud = n_samples / (2.0 * n_fraud)
-    
-    return torch.FloatTensor([weight_fraud / weight_legit])
+
+    # Return scalar tensor for proper broadcasting with torch.where
+    return torch.FloatTensor([weight_fraud / weight_legit])[0]
 
 
 def create_data_loaders(X_train, y_train, X_test, y_test, batch_size=512):

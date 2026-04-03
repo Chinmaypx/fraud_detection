@@ -14,7 +14,7 @@ import pickle
 from datetime import datetime
 
 from src.pytorch_model import (
-    FraudDetectorNet, AutoencoderDetector,
+    FraudDetectorNet,
     get_class_weights, create_data_loaders
 )
 
@@ -88,27 +88,22 @@ class PyTorchTrainer:
         """
         if self.model is None:
             self.build_model()
-        
+
         # Compute class weights for imbalanced data
         pos_weight = get_class_weights(
             y_train if isinstance(y_train, np.ndarray) else y_train.values
         ).to(self.device)
-        
-        criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+
+        criterion = nn.BCELoss(reduction='none')
         optimizer = optim.Adam(
-            self.model.parameters(), 
-            lr=learning_rate, 
+            self.model.parameters(),
+            lr=learning_rate,
             weight_decay=weight_decay
         )
         scheduler = ReduceLROnPlateau(
             optimizer, mode='max', factor=0.5, patience=5
         )
-        
-        # We need a raw model (without sigmoid) for BCEWithLogitsLoss
-        # So we'll modify forward to return raw logits during training
-        # Actually, let's just use BCELoss since model already has sigmoid
-        criterion = nn.BCELoss(reduction='none')
-        
+
         print("\n" + "=" * 60)
         print("TRAINING PYTORCH FRAUD DETECTOR")
         print("=" * 60)

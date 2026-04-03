@@ -1,22 +1,17 @@
-import { useState } from 'react';
+import { useRef } from 'react';
 import { trainModel } from '../api';
 
-export default function Training() {
-  const [training, setTraining] = useState(false);
-  const [result, setResult] = useState(null);
-  const [error, setError] = useState(null);
+export default function Training({ trainingState, onTrainingUpdate }) {
+  const { training, result, error } = trainingState;
+  const abortRef = useRef(null);
 
   const handleTrain = async () => {
-    setTraining(true);
-    setError(null);
-    setResult(null);
+    onTrainingUpdate({ training: true, error: null, result: null });
     try {
       const res = await trainModel();
-      setResult(res);
+      onTrainingUpdate({ training: false, result: res });
     } catch (err) {
-      setError(err.message);
-    } finally {
-      setTraining(false);
+      onTrainingUpdate({ training: false, error: err.message });
     }
   };
 
@@ -69,6 +64,13 @@ export default function Training() {
               <>⚡ Start Training</>
             )}
           </button>
+
+          {training && (
+            <div className="training-persist-notice">
+              <span className="training-persist-icon">🔒</span>
+              <span>Training continues even if you switch tabs</span>
+            </div>
+          )}
         </div>
 
         {/* Training Result */}
@@ -84,6 +86,27 @@ export default function Training() {
               <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
                 Generating data → Preprocessing → Training 50 epochs → Evaluating
               </span>
+              <div className="training-steps-anim">
+                <div className="training-step active">
+                  <div className="training-step-dot"></div>
+                  <span>Data Pipeline</span>
+                </div>
+                <div className="training-step-connector"></div>
+                <div className="training-step">
+                  <div className="training-step-dot"></div>
+                  <span>Preprocessing</span>
+                </div>
+                <div className="training-step-connector"></div>
+                <div className="training-step">
+                  <div className="training-step-dot"></div>
+                  <span>Training</span>
+                </div>
+                <div className="training-step-connector"></div>
+                <div className="training-step">
+                  <div className="training-step-dot"></div>
+                  <span>Evaluation</span>
+                </div>
+              </div>
             </div>
           )}
 

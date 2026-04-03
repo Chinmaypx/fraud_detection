@@ -203,12 +203,6 @@ class ModelEvaluator:
         
         plt.close()
     
-    def plot_feature_importance(self, feature_names, save_path=None):
-        """
-        Plot feature importance for the model
-        """
-        pass
-    
     def print_summary(self):
         """
         Print evaluation summary
@@ -332,22 +326,4 @@ def calculate_business_metrics(y_test, y_pred, avg_fraud_amount=500):
 
 
 if __name__ == "__main__":
-    from src.data_pipeline import main
-    from src.preprocessing import Preprocessor
-    from src.train_model import ModelTrainer
-    
-    pipeline, X_train, X_test, y_train, y_test = main()
-    
-    preprocessor = Preprocessor()
-    X_train_scaled, X_test_scaled = preprocessor.fit_transform(X_train, X_test)
-    
-    trainer = ModelTrainer(X_train_scaled, y_train, X_test_scaled, y_test)
-    trainer.train_models()
-    
-    model_results = {}
-    for name in trainer.models:
-        y_pred, y_pred_proba = trainer.get_predictions(name)
-        model_results[name] = (y_test, y_pred, y_pred_proba)
-    
-    compare_models(model_results)
-    select_best_model(model_results, 'F1 Score')
+    print("Run src.train_model.main() to train and evaluate the model.")

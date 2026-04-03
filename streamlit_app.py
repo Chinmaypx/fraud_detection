@@ -6,7 +6,6 @@ Interactive web interface for testing fraud predictions
 import streamlit as st
 import pandas as pd
 import numpy as np
-import pickle
 from pathlib import Path
 import sys
 import os
@@ -15,7 +14,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from src.data_pipeline import DataPipeline
 from src.preprocessing import Preprocessor
-from src.train_model import ModelTrainer
+from src.train_model import PyTorchTrainer
 from src.evaluate import ModelEvaluator
 from src.predict import FraudDetector
 
@@ -35,25 +34,26 @@ st.sidebar.title("Navigation")
 page = st.sidebar.radio("Go to", ["Home", "Make Prediction", "Model Evaluation", "About"])
 
 @st.cache_resource
-def load_model_and_scaler():
+def load_detector():
     """
-    Load trained model and scaler
+    Load trained FraudDetector (PyTorch model, scaler, feature names)
     """
-    model_path = Path("models/gradient_boosting_model.pkl")
+    detector = FraudDetector()
+    model_path = Path("models/fraud_detector.pt")
     scaler_path = Path("models/scaler.pkl")
-    
-    model = None
-    scaler = None
-    
-    if model_path.exists():
-        with open(model_path, 'rb') as f:
-            model = pickle.load(f)
-    
-    if scaler_path.exists():
-        with open(scaler_path, 'rb') as f:
-            scaler = pickle.load(f)
-    
-    return model, scaler
+    features_path = Path("models/feature_names.json")
+
+    if not model_path.exists():
+        return None
+
+    try:
+        detector.load_model()
+        detector.load_scaler()
+        detector.load_feature_names()
+    except Exception:
+        return None
+
+    return detector
 
 
 def create_transaction_form():
@@ -170,43 +170,17 @@ if page == "Home":
 
 elif page == "Make Prediction":
     st.header("Make a Fraud Prediction")
-    
-    model, scaler = load_model_and_scaler()
-    
-    if model is None:
+
+    detector = load_detector()
+
+    if detector is None:
         st.warning("⚠️ No trained model found. Please train the model first.")
-        
-        if st.button("Train Model Now"):
-            with st.spinner("Training model... This may take a minute..."):
-                pipeline = DataPipeline()
-                pipeline.load_data()
-                pipeline.handle_missing_values()
-                pipeline.feature_engineering()
-                pipeline.encode_categorical()
-                X_train, X_test, y_train, y_test = pipeline.prepare_data()
-                
-                preprocessor = Preprocessor()
-                X_train_scaled, X_test_scaled = preprocessor.fit_transform(X_train, X_test)
-                
-                import joblib
-                joblib.dump(preprocessor.scaler, 'models/scaler.pkl')
-                
-                trainer = ModelTrainer(X_train_scaled, y_train, X_test_scaled, y_test)
-                trainer.train_models()
-                trainer.save_model('Gradient Boosting', 'models/')
-                
-                st.success("Model trained successfully!")
-                st.rerun()
     else:
         transaction_data, threshold = create_transaction_form()
         
         if st.button("Predict Fraud", type="primary"):
             with st.spinner("Analyzing transaction..."):
-                fraud_detector = FraudDetector()
-                fraud_detector.model = model
-                fraud_detector.scaler = scaler
-                
-                result = fraud_detector.predict(transaction_data, threshold)
+                result = detector.predict(transaction_data, threshold)
                 
                 st.divider()
                 
@@ -233,33 +207,30 @@ elif page == "Make Prediction":
 
 elif page == "Model Evaluation":
     st.header("Model Evaluation Metrics")
-    
-    model, scaler = load_model_and_scaler()
-    
-    if model is None:
+
+    detector = load_detector()
+
+    if detector is None:
         st.warning("⚠️ No trained model found. Please train the model first.")
     else:
-        st.subheader("Model Performance Metrics")
-        
-        metrics_data = {
-            "Metric": ["Accuracy", "Precision", "Recall", "F1 Score", "ROC-AUC", "PR-AUC"],
-            "Value": ["0.95", "0.85", "0.80", "0.82", "0.92", "0.75"],
-            "Description": [
-                "Overall correct predictions",
-                "Of flagged as fraud, how many were actually fraud",
-                "Of actual fraud, how many did we catch",
-                "Harmonic mean of precision and recall",
-                "Ability to distinguish fraud from legitimate",
-                "Area under precision-recall curve"
-            ]
-        }
-        
-        metrics_df = pd.DataFrame(metrics_data)
-        st.table(metrics_df)
-        
+        import json
+        metrics_path = Path("models/eval_metrics.json")
+        if metrics_path.exists():
+            with open(metrics_path, 'r') as f:
+                saved_metrics = json.load(f)
+            st.subheader("Model Performance Metrics")
+            metrics_data = {
+                "Metric": list(saved_metrics.keys()),
+                "Value": [f"{v:.4f}" for v in saved_metrics.values()],
+            }
+            metrics_df = pd.DataFrame(metrics_data)
+            st.table(metrics_df)
+        else:
+            st.info("No evaluation metrics found. Train the model to generate metrics.")
+
         st.markdown("""
         ### Understanding the Metrics
-        
+
         | Metric | What It Measures | Why It Matters |
         |--------|-----------------|----------------|
         | **Precision** | Accuracy of fraud predictions | Low precision = too many false alarms |
@@ -267,9 +238,9 @@ elif page == "Model Evaluation":
         | **F1 Score** | Balance between precision and recall | Best single metric for imbalanced data |
         | **ROC-AUC** | Overall discrimination ability | Higher = better at distinguishing fraud |
         | **PR-AUC** | Performance on rare class | Best for highly imbalanced datasets |
-        
+
         ### Business Impact
-        
+
         - **False Negatives (Missed Fraud)**: Direct financial loss to bank and customer
         - **False Positives (False Alarms)**: Customer inconvenience, potential churn
         """)

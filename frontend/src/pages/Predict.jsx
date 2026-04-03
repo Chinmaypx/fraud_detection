@@ -1,6 +1,149 @@
 import { useState } from 'react';
 import { predictFraud } from '../api';
 
+/**
+ * Generate a human-readable analysis summary based on the transaction inputs
+ * and the prediction result.
+ */
+function generateAnalysisSummary(form, result) {
+  const factors = [];
+  const positiveFactors = [];
+
+  const amount = form.transaction_amount;
+  const avgAmount = form.avg_transaction_amount;
+  const hourOfDay = Math.floor(form.transaction_time / 3600);
+  const txCount24h = form.transaction_count_24h;
+  const accountAge = form.account_age_days;
+  const category = form.merchant_category;
+  const amountRatio = amount / (avgAmount || 1);
+
+  // Amount analysis
+  if (amount > 2000) {
+    factors.push({
+      icon: '💰',
+      label: 'Very high transaction amount',
+      detail: `₹${amount.toLocaleString()} is significantly above normal spending patterns`,
+      severity: 'high',
+    });
+  } else if (amount > 500) {
+    factors.push({
+      icon: '💳',
+      label: 'Above-average transaction amount',
+      detail: `₹${amount.toLocaleString()} is higher than typical transactions`,
+      severity: 'medium',
+    });
+  } else {
+    positiveFactors.push({
+      icon: '✅',
+      label: 'Normal transaction amount',
+      detail: `₹${amount.toLocaleString()} is within typical spending range`,
+    });
+  }
+
+  // Amount vs average ratio
+  if (amountRatio > 5) {
+    factors.push({
+      icon: '📊',
+      label: 'Amount far exceeds personal average',
+      detail: `${amountRatio.toFixed(1)}x higher than average (₹${avgAmount})`,
+      severity: 'high',
+    });
+  } else if (amountRatio > 2) {
+    factors.push({
+      icon: '📈',
+      label: 'Amount above personal average',
+      detail: `${amountRatio.toFixed(1)}x higher than average (₹${avgAmount})`,
+      severity: 'medium',
+    });
+  } else {
+    positiveFactors.push({
+      icon: '✅',
+      label: 'Amount consistent with spending history',
+      detail: `Within ${amountRatio.toFixed(1)}x of average (₹${avgAmount})`,
+    });
+  }
+
+  // Time analysis
+  if (hourOfDay >= 22 || hourOfDay <= 5) {
+    factors.push({
+      icon: '🌙',
+      label: 'Late night / early morning transaction',
+      detail: `Transaction at ${hourOfDay}:00 — unusual hours with higher fraud rates`,
+      severity: 'medium',
+    });
+  } else if (hourOfDay >= 9 && hourOfDay <= 20) {
+    positiveFactors.push({
+      icon: '☀️',
+      label: 'Normal business hours',
+      detail: `Transaction at ${hourOfDay}:00 — typical activity window`,
+    });
+  }
+
+  // Transaction frequency
+  if (txCount24h > 15) {
+    factors.push({
+      icon: '⚡',
+      label: 'Extremely high transaction frequency',
+      detail: `${txCount24h} transactions in 24h suggests potential card testing or rapid fraud`,
+      severity: 'high',
+    });
+  } else if (txCount24h > 10) {
+    factors.push({
+      icon: '🔄',
+      label: 'High transaction frequency',
+      detail: `${txCount24h} transactions in 24h is above normal patterns`,
+      severity: 'medium',
+    });
+  } else {
+    positiveFactors.push({
+      icon: '✅',
+      label: 'Normal transaction frequency',
+      detail: `${txCount24h} transactions in 24h is within normal range`,
+    });
+  }
+
+  // Account age
+  if (accountAge < 30) {
+    factors.push({
+      icon: '🆕',
+      label: 'Very new account',
+      detail: `Account is only ${accountAge} days old — new accounts have higher fraud risk`,
+      severity: 'high',
+    });
+  } else if (accountAge < 90) {
+    factors.push({
+      icon: '📅',
+      label: 'Relatively new account',
+      detail: `Account is ${accountAge} days old — still within the high-risk period`,
+      severity: 'medium',
+    });
+  } else {
+    positiveFactors.push({
+      icon: '🏛️',
+      label: 'Established account',
+      detail: `Account is ${accountAge} days old with established history`,
+    });
+  }
+
+  // Merchant category
+  if (category === 'online') {
+    factors.push({
+      icon: '🌐',
+      label: 'Online merchant category',
+      detail: 'Online transactions carry higher fraud risk due to card-not-present nature',
+      severity: 'medium',
+    });
+  } else {
+    positiveFactors.push({
+      icon: '🏪',
+      label: `In-person ${category} merchant`,
+      detail: 'Physical merchant transactions have lower fraud rates',
+    });
+  }
+
+  return { factors, positiveFactors };
+}
+
 export default function Predict() {
   const [form, setForm] = useState({
     transaction_amount: 250,
@@ -16,6 +159,7 @@ export default function Predict() {
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [analysisForm, setAnalysisForm] = useState(null);
 
   const handleChange = (field, value) => {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -25,9 +169,11 @@ export default function Predict() {
     setLoading(true);
     setError(null);
     setResult(null);
+    setAnalysisForm(null);
     try {
       const res = await predictFraud(form);
       setResult(res);
+      setAnalysisForm({ ...form });
     } catch (err) {
       setError(err.message);
     } finally {
@@ -44,6 +190,8 @@ export default function Predict() {
     : '';
 
   const hourOfDay = Math.floor(form.transaction_time / 3600);
+
+  const analysis = result && analysisForm ? generateAnalysisSummary(analysisForm, result) : null;
 
   return (
     <div>
@@ -270,6 +418,97 @@ export default function Predict() {
         </div>
       </div>
 
+      {/* Analysis Summary - shows after prediction */}
+      {result && analysis && (
+        <div className="card animate-in" style={{ marginTop: 'var(--space-xl)' }}>
+          <div className="card-header">
+            <span className="card-title">
+              {result.is_fraud ? '🚨' : '🔍'} Analysis Summary — Why this transaction is {result.is_fraud ? 'Fraudulent' : 'Legitimate'}
+            </span>
+          </div>
+
+          <div className="analysis-summary-text">
+            <p>
+              {result.is_fraud ? (
+                <>
+                  This transaction has been flagged as <strong>potentially fraudulent</strong> with a {(result.fraud_probability * 100).toFixed(1)}% confidence score.
+                  The following risk factors contributed to this assessment:
+                </>
+              ) : (
+                <>
+                  This transaction appears <strong>legitimate</strong> with only a {(result.fraud_probability * 100).toFixed(1)}% fraud probability.
+                  The following factors support this assessment:
+                </>
+              )}
+            </p>
+          </div>
+
+          {/* Risk Factors */}
+          {analysis.factors.length > 0 && (
+            <div className="analysis-section">
+              <div className="analysis-section-header risk">
+                <span>⚠️ Risk Factors ({analysis.factors.length})</span>
+              </div>
+              <div className="analysis-factors-list">
+                {analysis.factors.map((f, i) => (
+                  <div key={i} className={`analysis-factor-item ${f.severity}`}>
+                    <div className="analysis-factor-icon">{f.icon}</div>
+                    <div className="analysis-factor-content">
+                      <div className="analysis-factor-label">{f.label}</div>
+                      <div className="analysis-factor-detail">{f.detail}</div>
+                    </div>
+                    <span className={`analysis-severity-badge ${f.severity}`}>
+                      {f.severity}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Positive Factors */}
+          {analysis.positiveFactors.length > 0 && (
+            <div className="analysis-section">
+              <div className="analysis-section-header safe">
+                <span>✅ Positive Indicators ({analysis.positiveFactors.length})</span>
+              </div>
+              <div className="analysis-factors-list">
+                {analysis.positiveFactors.map((f, i) => (
+                  <div key={i} className="analysis-factor-item positive">
+                    <div className="analysis-factor-icon">{f.icon}</div>
+                    <div className="analysis-factor-content">
+                      <div className="analysis-factor-label">{f.label}</div>
+                      <div className="analysis-factor-detail">{f.detail}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Verdict summary */}
+          <div className={`analysis-verdict ${result.is_fraud ? 'danger' : 'safe'}`}>
+            <div className="analysis-verdict-icon">{result.is_fraud ? '🛑' : '🟢'}</div>
+            <div className="analysis-verdict-text">
+              <strong>Verdict:</strong>{' '}
+              {result.is_fraud ? (
+                <>
+                  {analysis.factors.length} risk factor{analysis.factors.length !== 1 ? 's' : ''} detected.
+                  The combination of {analysis.factors.slice(0, 2).map(f => f.label.toLowerCase()).join(' and ')} strongly
+                  suggests this transaction should be reviewed or blocked.
+                </>
+              ) : (
+                <>
+                  {analysis.positiveFactors.length} positive indicator{analysis.positiveFactors.length !== 1 ? 's' : ''} found
+                  {analysis.factors.length > 0 ? ` with only ${analysis.factors.length} minor risk factor${analysis.factors.length !== 1 ? 's' : ''}` : ''}.
+                  This transaction follows normal behavior patterns and can be approved.
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Quick Test Scenarios */}
       <div className="card animate-in" style={{ marginTop: 'var(--space-xl)' }}>
         <div className="card-header">
@@ -290,6 +529,7 @@ export default function Predict() {
                 avg_transaction_amount: 75,
               });
               setResult(null);
+              setAnalysisForm(null);
             }}
           >
             ✅ Normal Transaction
@@ -308,6 +548,7 @@ export default function Predict() {
                 avg_transaction_amount: 50,
               });
               setResult(null);
+              setAnalysisForm(null);
             }}
           >
             🚨 Suspicious Transaction
@@ -326,6 +567,7 @@ export default function Predict() {
                 avg_transaction_amount: 100,
               });
               setResult(null);
+              setAnalysisForm(null);
             }}
           >
             ⚠️ Night Transaction

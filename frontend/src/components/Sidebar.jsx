@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { checkHealth } from '../api';
 
-export default function Sidebar({ activePage, onNavigate }) {
+export default function Sidebar({ activePage, onNavigate, isTraining }) {
   const [health, setHealth] = useState(null);
 
   useEffect(() => {
@@ -40,11 +40,17 @@ export default function Sidebar({ activePage, onNavigate }) {
         {navItems.map((item) => (
           <div
             key={item.id}
-            className={`nav-item ${activePage === item.id ? 'active' : ''}`}
+            className={`nav-item ${activePage === item.id ? 'active' : ''} ${item.id === 'training' && isTraining ? 'training-active' : ''}`}
             onClick={() => onNavigate(item.id)}
           >
             <span className="icon">{item.icon}</span>
             <span>{item.label}</span>
+            {item.id === 'training' && isTraining && (
+              <span className="nav-training-badge">
+                <span className="nav-training-dot"></span>
+                Running
+              </span>
+            )}
           </div>
         ))}
       </nav>
