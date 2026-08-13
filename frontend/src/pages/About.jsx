@@ -2,24 +2,24 @@ export default function About() {
   return (
     <div>
       <div className="page-header">
-        <h2>💡 About FraudShield AI</h2>
+        <h2>About FraudShield AI</h2>
         <p>End-to-end deep learning fraud detection system</p>
       </div>
 
       <div className="grid-2">
         <div className="card animate-in">
           <div className="card-header">
-            <span className="card-title">🏗️ Technology Stack</span>
+            <span className="card-title">Technology Stack</span>
           </div>
           <div className="layer-list">
             {[
-              ['🧠 Deep Learning', 'PyTorch Neural Network (6-layer DNN)'],
-              ['🔧 Backend', 'FastAPI (Python) — REST API'],
-              ['⚛️ Frontend', 'React + Vite — Modern SPA'],
-              ['📊 Data Processing', 'Pandas, NumPy, Scikit-learn'],
-              ['⚖️ Imbalance Handling', 'Class-weighted BCE Loss'],
-              ['📐 Preprocessing', 'RobustScaler, Feature Engineering'],
-              ['💾 Model Format', 'PyTorch .pt checkpoint'],
+              ['Deep Learning', 'PyTorch — MLP (DNN) + LSTM'],
+              ['Backend', 'FastAPI (Python) — REST API'],
+              ['Frontend', 'React + Vite — Modern SPA'],
+              ['Data Processing', 'Pandas, NumPy, Scikit-learn'],
+              ['Imbalance Handling', 'Class-weighted BCE Loss'],
+              ['Preprocessing', 'RobustScaler, Feature Engineering'],
+              ['Model Format', 'PyTorch .pt checkpoint'],
             ].map(([key, val]) => (
               <div key={key} className="layer-item">
                 <span className="layer-dot"></span>
@@ -30,25 +30,59 @@ export default function About() {
           </div>
         </div>
 
+        {/* MLP + LSTM Architecture Side-by-Side */}
         <div className="card animate-in animate-in-delay-1">
           <div className="card-header">
-            <span className="card-title">🧠 Neural Network Architecture</span>
+            <span className="card-title">Model Architectures</span>
           </div>
-          <div className="layer-list">
-            {[
-              'Input Layer → Linear(n, 128)',
-              'BatchNorm1d(128) + ReLU + Dropout(0.3)',
-              'Linear(128, 256) + BatchNorm + ReLU + Dropout(0.3)',
-              'Linear(256, 128) + BatchNorm + ReLU + Dropout(0.3)',
-              'Linear(128, 64) + BatchNorm + ReLU + Dropout(0.15)',
-              'Linear(64, 32) + ReLU + Dropout(0.15)',
-              'Linear(32, 1) + Sigmoid → Fraud Probability',
-            ].map((layer, i) => (
-              <div key={i} className="layer-item">
-                <span className="layer-dot"></span>
-                {layer}
+          <div className="arch-comparison">
+            {/* MLP Architecture */}
+            <div className="arch-card">
+              <div className="arch-card-title">
+                MLP (FraudDetectorNet)
               </div>
-            ))}
+              <div className="arch-card-subtitle">6-layer fully-connected DNN — treats each transaction independently</div>
+              <div className="layer-list">
+                {[
+                  'Input → Linear(n, 128)',
+                  'BatchNorm + ReLU + Dropout(0.3)',
+                  'Linear(128, 256) → expand',
+                  'Linear(256, 128) → contract',
+                  'Linear(128, 64) + Dropout(0.15)',
+                  'Linear(64, 32) + ReLU',
+                  'Linear(32, 1) + Sigmoid',
+                ].map((layer, i) => (
+                  <div key={i} className="layer-item">
+                    <span className="layer-dot"></span>
+                    {layer}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* LSTM Architecture */}
+            <div className="arch-card">
+              <div className="arch-card-title">
+                LSTM (FraudLSTMNet)
+              </div>
+              <div className="arch-card-subtitle">Bidirectional 2-layer LSTM — learns temporal patterns across transaction sequences</div>
+              <div className="layer-list">
+                {[
+                  'Input (batch, seq=10, features)',
+                  'LSTM(2 layers, hidden=64, bidir)',
+                  'Last step → Linear(128, 64)',
+                  'BatchNorm + ReLU + Dropout(0.3)',
+                  'Linear(64, 32) + ReLU',
+                  'Dropout(0.15)',
+                  'Linear(32, 1) + Sigmoid',
+                ].map((layer, i) => (
+                  <div key={i} className="layer-item">
+                    <span className="layer-dot"></span>
+                    {layer}
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -56,7 +90,7 @@ export default function About() {
       <div className="grid-2" style={{ marginTop: 'var(--space-xl)' }}>
         <div className="card animate-in animate-in-delay-2">
           <div className="card-header">
-            <span className="card-title">🔬 Feature Engineering</span>
+            <span className="card-title">Feature Engineering</span>
           </div>
           <table className="metrics-table">
             <thead>
@@ -86,7 +120,7 @@ export default function About() {
 
         <div className="card animate-in animate-in-delay-3">
           <div className="card-header">
-            <span className="card-title">📂 Project Structure</span>
+            <span className="card-title">Project Structure</span>
           </div>
           <pre style={{
             fontFamily: "'JetBrains Mono', monospace",
@@ -100,20 +134,20 @@ export default function About() {
           }}>
 {`fraud_detection_project/
 ├── src/
-│   ├── pytorch_model.py    # Neural network definitions
-│   ├── train_model.py      # PyTorch training pipeline
-│   ├── predict.py          # Inference module
+│   ├── pytorch_model.py    # MLP + LSTM model definitions
+│   ├── train_model.py      # Training pipelines (both models)
+│   ├── predict.py          # Inference (MLP + LSTM)
 │   ├── evaluate.py         # Evaluation metrics
 │   ├── data_pipeline.py    # Data processing
 │   └── preprocessing.py    # Feature scaling
 ├── api/
-│   └── app.py              # FastAPI server
+│   └── app.py              # FastAPI (MLP + LSTM endpoints)
 ├── frontend/               # React + Vite
 │   └── src/
 │       ├── pages/          # Dashboard, Predict, etc.
 │       ├── components/     # Sidebar, shared UI
 │       └── api.js          # API client
-├── models/                 # Saved .pt models
+├── models/                 # Saved .pt models (MLP + LSTM)
 └── requirements.txt`}
           </pre>
         </div>
@@ -121,7 +155,7 @@ export default function About() {
 
       <div className="card animate-in" style={{ marginTop: 'var(--space-xl)' }}>
         <div className="card-header">
-          <span className="card-title">🌍 Real-World Impact</span>
+          <span className="card-title">Real-World Impact</span>
         </div>
         <div className="stats-grid" style={{ marginBottom: 0 }}>
           {[

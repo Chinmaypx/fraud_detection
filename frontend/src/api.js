@@ -10,13 +10,28 @@ export async function getModelInfo() {
   return res.json();
 }
 
+export async function getLSTMModelInfo() {
+  const res = await fetch(`${API_BASE}/model-info-lstm`);
+  return res.json();
+}
+
 export async function getTrainingHistory() {
   const res = await fetch(`${API_BASE}/training-history`);
   return res.json();
 }
 
+export async function getLSTMTrainingHistory() {
+  const res = await fetch(`${API_BASE}/training-history-lstm`);
+  return res.json();
+}
+
 export async function getMetrics() {
   const res = await fetch(`${API_BASE}/metrics`);
+  return res.json();
+}
+
+export async function getLSTMMetrics() {
+  const res = await fetch(`${API_BASE}/metrics-lstm`);
   return res.json();
 }
 
@@ -33,6 +48,19 @@ export async function predictFraud(transaction) {
   return res.json();
 }
 
+export async function predictFraudLSTM(transaction) {
+  const res = await fetch(`${API_BASE}/predict-lstm`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(transaction),
+  });
+  if (!res.ok) {
+    const error = await res.json();
+    throw new Error(error.detail || 'LSTM Prediction failed');
+  }
+  return res.json();
+}
+
 export async function trainModel() {
   const res = await fetch(`${API_BASE}/train`, {
     method: 'POST',
@@ -43,3 +71,15 @@ export async function trainModel() {
   }
   return res.json();
 }
+
+export async function trainLSTMModel() {
+  const res = await fetch(`${API_BASE}/train-lstm`, {
+    method: 'POST',
+  });
+  if (!res.ok) {
+    const error = await res.json();
+    throw new Error(error.detail || 'LSTM Training failed');
+  }
+  return res.json();
+}
+

@@ -1,18 +1,25 @@
 import { useEffect, useState } from 'react';
-import { getMetrics, getTrainingHistory } from '../api';
+import { getMetrics, getLSTMMetrics, getTrainingHistory, getLSTMTrainingHistory } from '../api';
 
 export default function Metrics() {
-  const [metrics, setMetrics] = useState(null);
-  const [history, setHistory] = useState(null);
+  const [mlpMetrics, setMlpMetrics] = useState(null);
+  const [lstmMetrics, setLstmMetrics] = useState(null);
+  const [mlpHistory, setMlpHistory] = useState(null);
+  const [lstmHistory, setLstmHistory] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState('comparison');
 
   useEffect(() => {
     Promise.all([
       getMetrics().catch(() => null),
+      getLSTMMetrics().catch(() => null),
       getTrainingHistory().catch(() => null),
-    ]).then(([m, h]) => {
-      setMetrics(m?.message ? null : m);
-      setHistory(h?.message ? null : h);
+      getLSTMTrainingHistory().catch(() => null),
+    ]).then(([m, lm, h, lh]) => {
+      setMlpMetrics(m?.message ? null : m);
+      setLstmMetrics(lm?.message ? null : lm);
+      setMlpHistory(h?.message ? null : h);
+      setLstmHistory(lh?.message ? null : lh);
       setLoading(false);
     });
   }, []);
@@ -26,19 +33,18 @@ export default function Metrics() {
     );
   }
 
-  if (!metrics) {
+  if (!mlpMetrics && !lstmMetrics) {
     return (
       <div>
         <div className="page-header">
-          <h2>📈 Model Metrics</h2>
-          <p>Detailed evaluation of the trained model</p>
+          <h2>Model Metrics</h2>
+          <p>Detailed evaluation of the trained models</p>
         </div>
         <div className="card">
           <div className="empty-state">
-            <div className="icon">📊</div>
             <p>No metrics available</p>
             <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '8px' }}>
-              Train a model first to see evaluation metrics
+              Train at least one model to see evaluation metrics
             </p>
           </div>
         </div>
@@ -47,165 +53,397 @@ export default function Metrics() {
   }
 
   const metricsList = [
-    { key: 'Accuracy', desc: 'Overall correct predictions', color: '#3b82f6' },
-    { key: 'Precision', desc: 'Of flagged fraud, how many were real', color: '#8b5cf6' },
-    { key: 'Recall (Sensitivity)', desc: 'Of real fraud, how many did we catch', color: '#f59e0b' },
-    { key: 'Specificity', desc: 'True negative rate', color: '#06b6d4' },
-    { key: 'F1 Score', desc: 'Balance of precision & recall', color: '#10b981' },
-    { key: 'ROC-AUC', desc: 'Discrimination ability', color: '#ec4899' },
-    { key: 'PR-AUC', desc: 'Best for imbalanced data', color: '#f97316' },
+    { key: 'Accuracy', desc: 'Overall correct predictions', mlpColor: '#3b82f6', lstmColor: '#8b5cf6' },
+    { key: 'Precision', desc: 'Of flagged fraud, how many were real', mlpColor: '#8b5cf6', lstmColor: '#ec4899' },
+    { key: 'Recall (Sensitivity)', desc: 'Of real fraud, how many did we catch', mlpColor: '#f59e0b', lstmColor: '#f97316' },
+    { key: 'Specificity', desc: 'True negative rate', mlpColor: '#06b6d4', lstmColor: '#14b8a6' },
+    { key: 'F1 Score', desc: 'Balance of precision & recall', mlpColor: '#10b981', lstmColor: '#22c55e' },
+    { key: 'ROC-AUC', desc: 'Discrimination ability', mlpColor: '#ec4899', lstmColor: '#f43f5e' },
+    { key: 'PR-AUC', desc: 'Best for imbalanced data', mlpColor: '#f97316', lstmColor: '#eab308' },
   ];
+
+  const metrics = activeTab === 'lstm' ? lstmMetrics : mlpMetrics;
+  const history = activeTab === 'lstm' ? lstmHistory : mlpHistory;
 
   return (
     <div>
       <div className="page-header">
-        <h2>📈 Model Metrics</h2>
-        <p>Detailed evaluation of the PyTorch neural network</p>
+        <h2>Model Metrics</h2>
+        <p>Detailed evaluation of MLP & LSTM neural networks</p>
       </div>
 
-      {/* Metrics Cards */}
-      <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
-        {metricsList.map((m, i) => {
-          const val = metrics[m.key];
-          if (val === undefined) return null;
-          return (
-            <div key={m.key} className={`stat-card animate-in animate-in-delay-${Math.min(i + 1, 4)}`}>
-              <div className="stat-label">{m.key}</div>
-              <div className="stat-value" style={{ color: m.color }}>
-                {(val * 100).toFixed(1)}%
-              </div>
-              <div className="stat-delta">{m.desc}</div>
-              <div className="progress-bar-container" style={{ marginTop: '12px' }}>
-                <div
-                  className="progress-bar-fill"
-                  style={{ width: `${val * 100}%`, background: m.color }}
-                ></div>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      <div className="grid-2" style={{ marginTop: 'var(--space-xl)' }}>
-        {/* Metrics Table */}
-        <div className="card animate-in">
-          <div className="card-header">
-            <span className="card-title">📋 Detailed Metrics</span>
-          </div>
-          <table className="metrics-table">
-            <thead>
-              <tr>
-                <th>Metric</th>
-                <th>Score</th>
-                <th style={{ width: '40%' }}>Performance</th>
-              </tr>
-            </thead>
-            <tbody>
-              {metricsList.map((m) => {
-                const val = metrics[m.key];
-                if (val === undefined) return null;
-                return (
-                  <tr key={m.key}>
-                    <td>
-                      <div style={{ fontWeight: 500 }}>{m.key}</div>
-                      <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{m.desc}</div>
-                    </td>
-                    <td>
-                      <span className="metric-value" style={{ color: m.color }}>
-                        {(val * 100).toFixed(2)}%
-                      </span>
-                    </td>
-                    <td>
-                      <div className="metric-bar">
-                        <div className="metric-bar-track">
-                          <div
-                            className="metric-bar-fill"
-                            style={{ width: `${val * 100}%`, background: m.color }}
-                          ></div>
-                        </div>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-
-        {/* F1 Chart */}
-        <div className="card animate-in animate-in-delay-1">
-          <div className="card-header">
-            <span className="card-title">📈 F1 Score Over Training</span>
-            {history && <span className="card-subtitle">{history.train_f1?.length} epochs</span>}
-          </div>
-          {history?.train_f1 ? (
-            <F1Chart trainF1={history.train_f1} valF1={history.val_f1} />
-          ) : (
-            <div className="chart-placeholder">
-              <span style={{ fontSize: '2rem', marginBottom: '8px' }}>📈</span>
-              <span>No training history available</span>
-            </div>
-          )}
+      {/* Tab Selector */}
+      <div className="model-selector" style={{ marginBottom: 'var(--space-lg)' }}>
+        <span className="model-selector-label">View</span>
+        <div className="model-selector-pills">
+          <button
+            className={`model-pill ${activeTab === 'comparison' ? 'active' : ''}`}
+            onClick={() => setActiveTab('comparison')}
+          >
+            Comparison
+            <span className="model-pill-badge">Side-by-Side</span>
+          </button>
+          <button
+            className={`model-pill ${activeTab === 'mlp' ? 'active' : ''}`}
+            onClick={() => setActiveTab('mlp')}
+          >
+            MLP
+            <span className="model-pill-badge">6-Layer DNN</span>
+          </button>
+          <button
+            className={`model-pill ${activeTab === 'lstm' ? 'active' : ''}`}
+            onClick={() => setActiveTab('lstm')}
+          >
+            LSTM
+            <span className="model-pill-badge">Sequence</span>
+          </button>
         </div>
       </div>
 
-      {/* Training Performance Graphs */}
-      {history && (
+      {/* ========== COMPARISON VIEW ========== */}
+      {activeTab === 'comparison' && (
         <>
+          {/* Side-by-side comparison table */}
+          <div className="card animate-in">
+            <div className="card-header">
+              <span className="card-title">MLP vs LSTM — Performance Comparison</span>
+            </div>
+            <table className="metrics-table">
+              <thead>
+                <tr>
+                  <th>Metric</th>
+                  <th style={{ textAlign: 'center' }}>
+                    <span className="model-tag mlp" style={{ fontSize: '0.65rem' }}>MLP</span>
+                  </th>
+                  <th style={{ textAlign: 'center' }}>
+                    <span className="model-tag lstm" style={{ fontSize: '0.65rem' }}>LSTM</span>
+                  </th>
+                  <th style={{ textAlign: 'center' }}>Winner</th>
+                  <th style={{ width: '25%' }}>Visual</th>
+                </tr>
+              </thead>
+              <tbody>
+                {metricsList.map((m) => {
+                  const mlpVal = mlpMetrics?.[m.key];
+                  const lstmVal = lstmMetrics?.[m.key];
+                  const mlpBetter = mlpVal != null && lstmVal != null && mlpVal > lstmVal;
+                  const lstmBetter = mlpVal != null && lstmVal != null && lstmVal > mlpVal;
+                  const tied = mlpVal != null && lstmVal != null && Math.abs(mlpVal - lstmVal) < 0.0001;
+                  return (
+                    <tr key={m.key}>
+                      <td>
+                        <div style={{ fontWeight: 500 }}>{m.key}</div>
+                        <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{m.desc}</div>
+                      </td>
+                      <td style={{ textAlign: 'center' }}>
+                        <span className="metric-value" style={{ color: mlpBetter ? '#3b82f6' : 'var(--text-secondary)', fontWeight: mlpBetter ? 700 : 400 }}>
+                          {mlpVal != null ? (mlpVal * 100).toFixed(2) + '%' : '—'}
+                        </span>
+                      </td>
+                      <td style={{ textAlign: 'center' }}>
+                        <span className="metric-value" style={{ color: lstmBetter ? '#8b5cf6' : 'var(--text-secondary)', fontWeight: lstmBetter ? 700 : 400 }}>
+                          {lstmVal != null ? (lstmVal * 100).toFixed(2) + '%' : '—'}
+                        </span>
+                      </td>
+                      <td style={{ textAlign: 'center' }}>
+                        {tied ? (
+                          <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>Tied</span>
+                        ) : mlpBetter ? (
+                          <span className="model-tag mlp" style={{ fontSize: '0.6rem' }}>MLP +{((mlpVal - lstmVal) * 100).toFixed(2)}pp</span>
+                        ) : lstmBetter ? (
+                          <span className="model-tag lstm" style={{ fontSize: '0.6rem' }}>LSTM +{((lstmVal - mlpVal) * 100).toFixed(2)}pp</span>
+                        ) : (
+                          <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>—</span>
+                        )}
+                      </td>
+                      <td>
+                        <div className="metric-bar" style={{ position: 'relative' }}>
+                          <div className="metric-bar-track" style={{ position: 'relative' }}>
+                            {mlpVal != null && (
+                              <div
+                                className="metric-bar-fill"
+                                style={{ width: `${mlpVal * 100}%`, background: '#3b82f6', opacity: 0.8, position: 'absolute', top: 0, height: '50%' }}
+                              ></div>
+                            )}
+                            {lstmVal != null && (
+                              <div
+                                className="metric-bar-fill"
+                                style={{ width: `${lstmVal * 100}%`, background: '#8b5cf6', opacity: 0.8, position: 'absolute', bottom: 0, height: '50%' }}
+                              ></div>
+                            )}
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Comparison Charts */}
           <div className="grid-2" style={{ marginTop: 'var(--space-xl)' }}>
             <div className="card animate-in">
               <div className="card-header">
-                <span className="card-title">📉 Training & Validation Loss</span>
-                <span className="card-subtitle">Lower is better</span>
+                <span className="card-title">MLP Training Loss</span>
+                <span className="model-tag mlp">MLP</span>
               </div>
-              {history?.train_loss ? (
-                <LossChart trainLoss={history.train_loss} valLoss={history.val_loss} />
+              {mlpHistory?.train_loss ? (
+                <LossChart trainLoss={mlpHistory.train_loss} valLoss={mlpHistory.val_loss} />
               ) : (
-                <div className="chart-placeholder"><span>No data</span></div>
+                <div className="chart-placeholder"><span>No MLP data</span></div>
               )}
             </div>
-
             <div className="card animate-in animate-in-delay-1">
               <div className="card-header">
-                <span className="card-title">🎯 Training & Validation Accuracy</span>
-                <span className="card-subtitle">Higher is better</span>
+                <span className="card-title">LSTM Training Loss</span>
+                <span className="model-tag lstm">LSTM</span>
               </div>
-              {history?.train_acc ? (
-                <AccuracyChart trainAcc={history.train_acc} valAcc={history.val_acc} />
+              {lstmHistory?.train_loss ? (
+                <LossChart trainLoss={lstmHistory.train_loss} valLoss={lstmHistory.val_loss} />
               ) : (
-                <div className="chart-placeholder"><span>No data</span></div>
+                <div className="chart-placeholder"><span>No LSTM data</span></div>
               )}
             </div>
           </div>
 
-          <div className="card animate-in" style={{ marginTop: 'var(--space-xl)' }}>
-            <div className="card-header">
-              <span className="card-title">📊 Precision & Recall Over Training</span>
-              <span className="card-subtitle">Recall = fraud detection rate | Precision = accuracy of fraud flags</span>
+          {/* F1 Comparison */}
+          <div className="grid-2" style={{ marginTop: 'var(--space-xl)' }}>
+            <div className="card animate-in">
+              <div className="card-header">
+                <span className="card-title">MLP F1 Score</span>
+                <span className="model-tag mlp">MLP</span>
+              </div>
+              {mlpHistory?.train_f1 ? (
+                <F1Chart trainF1={mlpHistory.train_f1} valF1={mlpHistory.val_f1} />
+              ) : (
+                <div className="chart-placeholder"><span>No MLP data</span></div>
+              )}
             </div>
-            {history?.train_precision ? (
-              <PrecisionRecallChart 
-                trainPrec={history.train_precision} 
-                valPrec={history.val_precision}
-                trainRec={history.train_recall}
-                valRec={history.val_recall}
-              />
-            ) : (
-              <div className="chart-placeholder"><span>No data</span></div>
-            )}
+            <div className="card animate-in animate-in-delay-1">
+              <div className="card-header">
+                <span className="card-title">LSTM F1 Score</span>
+                <span className="model-tag lstm">LSTM</span>
+              </div>
+              {lstmHistory?.train_f1 ? (
+                <F1Chart trainF1={lstmHistory.train_f1} valF1={lstmHistory.val_f1} />
+              ) : (
+                <div className="chart-placeholder"><span>No LSTM data</span></div>
+              )}
+            </div>
           </div>
+
+          {/* Model Summary Cards */}
+          <div className="grid-2" style={{ marginTop: 'var(--space-xl)' }}>
+            <div className="card animate-in">
+              <div className="card-header">
+                <span className="card-title">MLP Summary</span>
+                <span className="model-tag mlp">MLP</span>
+              </div>
+              <div className="layer-list">
+                {[
+                  ['Type', 'FraudDetectorNet (6-layer DNN)'],
+                  ['Best For', 'Fast single-transaction scoring'],
+                  ['Approach', 'Independent feature analysis'],
+                  ['Epochs', `${mlpHistory?.train_loss?.length || '?'} (early stopped)`],
+                  ['Final Val Loss', mlpHistory?.val_loss ? mlpHistory.val_loss[mlpHistory.val_loss.length - 1].toFixed(5) : '—'],
+                ].map(([k, v]) => (
+                  <div key={k} className="layer-item">
+                    <span className="layer-dot"></span>
+                    <span style={{ color: 'var(--text-muted)', minWidth: '110px' }}>{k}:</span>
+                    <span style={{ color: 'var(--text-primary)' }}>{v}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="card animate-in animate-in-delay-1">
+              <div className="card-header">
+                <span className="card-title">LSTM Summary</span>
+                <span className="model-tag lstm">LSTM</span>
+              </div>
+              <div className="layer-list">
+                {[
+                  ['Type', 'FraudLSTMNet (Bidirectional LSTM)'],
+                  ['Best For', 'Sequential pattern detection'],
+                  ['Approach', 'Temporal customer behavior analysis'],
+                  ['Epochs', `${lstmHistory?.train_loss?.length || '?'} (early stopped)`],
+                  ['Final Val Loss', lstmHistory?.val_loss ? lstmHistory.val_loss[lstmHistory.val_loss.length - 1].toFixed(5) : '—'],
+                ].map(([k, v]) => (
+                  <div key={k} className="layer-item">
+                    <span className="layer-dot" style={{ background: '#8b5cf6' }}></span>
+                    <span style={{ color: 'var(--text-muted)', minWidth: '110px' }}>{k}:</span>
+                    <span style={{ color: 'var(--text-primary)' }}>{v}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* ========== SINGLE-MODEL VIEWS (MLP or LSTM) ========== */}
+      {(activeTab === 'mlp' || activeTab === 'lstm') && (
+        <>
+          {!metrics ? (
+            <div className="card">
+              <div className="empty-state">
+                <p>No {activeTab === 'lstm' ? 'LSTM' : 'MLP'} metrics available</p>
+                <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '8px' }}>
+                  Train the {activeTab === 'lstm' ? 'LSTM' : 'MLP'} model first
+                </p>
+              </div>
+            </div>
+          ) : (
+            <>
+              {/* Metrics Cards */}
+              <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
+                {metricsList.map((m, i) => {
+                  const val = metrics[m.key];
+                  const color = activeTab === 'lstm' ? m.lstmColor : m.mlpColor;
+                  if (val === undefined) return null;
+                  return (
+                    <div key={m.key} className={`stat-card animate-in animate-in-delay-${Math.min(i + 1, 4)}`}>
+                      <div className="stat-label">{m.key}</div>
+                      <div className="stat-value" style={{ color }}>
+                        {(val * 100).toFixed(1)}%
+                      </div>
+                      <div className="stat-delta">{m.desc}</div>
+                      <div className="progress-bar-container" style={{ marginTop: '12px' }}>
+                        <div
+                          className="progress-bar-fill"
+                          style={{ width: `${val * 100}%`, background: color }}
+                        ></div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="grid-2" style={{ marginTop: 'var(--space-xl)' }}>
+                {/* Metrics Table */}
+                <div className="card animate-in">
+                  <div className="card-header">
+                    <span className="card-title">Detailed Metrics</span>
+                    <span className={`model-tag ${activeTab}`}>{activeTab === 'lstm' ? 'LSTM' : 'MLP'}</span>
+                  </div>
+                  <table className="metrics-table">
+                    <thead>
+                      <tr>
+                        <th>Metric</th>
+                        <th>Score</th>
+                        <th style={{ width: '40%' }}>Performance</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {metricsList.map((m) => {
+                        const val = metrics[m.key];
+                        const color = activeTab === 'lstm' ? m.lstmColor : m.mlpColor;
+                        if (val === undefined) return null;
+                        return (
+                          <tr key={m.key}>
+                            <td>
+                              <div style={{ fontWeight: 500 }}>{m.key}</div>
+                              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{m.desc}</div>
+                            </td>
+                            <td>
+                              <span className="metric-value" style={{ color }}>
+                                {(val * 100).toFixed(2)}%
+                              </span>
+                            </td>
+                            <td>
+                              <div className="metric-bar">
+                                <div className="metric-bar-track">
+                                  <div
+                                    className="metric-bar-fill"
+                                    style={{ width: `${val * 100}%`, background: color }}
+                                  ></div>
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* F1 Chart */}
+                <div className="card animate-in animate-in-delay-1">
+                  <div className="card-header">
+                    <span className="card-title">F1 Score Over Training</span>
+                    {history && <span className="card-subtitle">{history.train_f1?.length} epochs</span>}
+                  </div>
+                  {history?.train_f1 ? (
+                    <F1Chart trainF1={history.train_f1} valF1={history.val_f1} />
+                  ) : (
+                    <div className="chart-placeholder">
+                      <span>No training history available</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Training Performance Graphs */}
+              {history && (
+                <>
+                  <div className="grid-2" style={{ marginTop: 'var(--space-xl)' }}>
+                    <div className="card animate-in">
+                      <div className="card-header">
+                        <span className="card-title">Training & Validation Loss</span>
+                        <span className="card-subtitle">Lower is better</span>
+                      </div>
+                      {history?.train_loss ? (
+                        <LossChart trainLoss={history.train_loss} valLoss={history.val_loss} />
+                      ) : (
+                        <div className="chart-placeholder"><span>No data</span></div>
+                      )}
+                    </div>
+
+                    <div className="card animate-in animate-in-delay-1">
+                      <div className="card-header">
+                        <span className="card-title">Training & Validation Accuracy</span>
+                        <span className="card-subtitle">Higher is better</span>
+                      </div>
+                      {history?.train_acc ? (
+                        <AccuracyChart trainAcc={history.train_acc} valAcc={history.val_acc} />
+                      ) : (
+                        <div className="chart-placeholder"><span>No data</span></div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="card animate-in" style={{ marginTop: 'var(--space-xl)' }}>
+                    <div className="card-header">
+                      <span className="card-title">Precision & Recall Over Training</span>
+                      <span className="card-subtitle">Recall = fraud detection rate | Precision = accuracy of fraud flags</span>
+                    </div>
+                    {history?.train_precision ? (
+                      <PrecisionRecallChart 
+                        trainPrec={history.train_precision} 
+                        valPrec={history.val_precision}
+                        trainRec={history.train_recall}
+                        valRec={history.val_recall}
+                      />
+                    ) : (
+                      <div className="chart-placeholder"><span>No data</span></div>
+                    )}
+                  </div>
+                </>
+              )}
+            </>
+          )}
         </>
       )}
 
       {/* Why These Metrics Matter */}
       <div className="card animate-in" style={{ marginTop: 'var(--space-xl)' }}>
         <div className="card-header">
-          <span className="card-title">💡 Understanding the Metrics</span>
+          <span className="card-title">Understanding the Metrics</span>
         </div>
         <div className="grid-2" style={{ gap: 'var(--space-lg)' }}>
           <div>
             <h4 style={{ color: 'var(--danger)', marginBottom: '8px', fontSize: '0.9rem' }}>
-              🚨 False Negatives (Missed Fraud) — MOST DANGEROUS
+              False Negatives (Missed Fraud) — High Financial Impact
             </h4>
             <ul style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', lineHeight: 1.8, paddingLeft: '16px' }}>
               <li>Direct financial loss to the bank & customer</li>
@@ -216,7 +454,7 @@ export default function Metrics() {
           </div>
           <div>
             <h4 style={{ color: 'var(--warning)', marginBottom: '8px', fontSize: '0.9rem' }}>
-              ⚠️ False Positives (False Alarms)
+              False Positives (False Alarms) — Customer Friction
             </h4>
             <ul style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', lineHeight: 1.8, paddingLeft: '16px' }}>
               <li>Customer frustration</li>

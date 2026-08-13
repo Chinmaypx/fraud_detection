@@ -1,10 +1,23 @@
-# Banking System Fraud Detection using Machine Learning
+# Banking System Fraud Detection using Deep Learning
 
-A complete end-to-end production-style machine learning project for detecting fraudulent banking transactions.
+A complete end-to-end production-ready deep learning project for detecting fraudulent banking transactions using **PyTorch** with dual-model architecture: **MLP (DNN)** and **Bidirectional LSTM**.
+
+## Key Features
+
+- **Dual-Model Architecture** — MLP (6-layer DNN) + Bidirectional LSTM for comprehensive fraud detection
+- **PyTorch Deep Neural Networks** — FraudDetectorNet (MLP) & FraudLSTMNet (LSTM)
+- **FastAPI REST API** with CORS for React frontend integration
+- **React + Vite web interface** with model comparison dashboard
+- **Comprehensive test suite** (97 unit tests)
+- **Class-weighted BCE loss** for handling imbalanced data
+- **RobustScaler** for feature normalization
 
 ## Project Overview
 
-This project implements a comprehensive fraud detection system that addresses the challenge of detecting rare fraudulent transactions in highly imbalanced datasets (<1% fraud rate).
+This project implements a comprehensive fraud detection system that addresses the challenge of detecting rare fraudulent transactions in highly imbalanced datasets (<1% fraud rate). It employs two complementary deep learning approaches:
+
+1. **MLP (Multi-Layer Perceptron)** — Analyzes each transaction independently using a 6-layer fully-connected network
+2. **LSTM (Long Short-Term Memory)** — Captures temporal patterns across sequences of customer transactions using a bidirectional 2-layer LSTM
 
 ---
 
@@ -108,19 +121,57 @@ This assigns higher penalty to misclassification of minority class.
 
 ### File: `src/train_model.py`
 
-### Models Compared
+### Model 1: FraudDetectorNet — MLP (PyTorch)
 
-| Model | Why Used |
-|-------|----------|
-| **Logistic Regression** | Interpretable baseline, provides probabilities, fast |
-| **Decision Tree** | Interpretable, captures non-linear patterns |
-| **Random Forest** | Ensemble of trees, reduces overfitting, handles high-dimensional data |
-| **Gradient Boosting** | Sequential correction of errors, often best performance |
+```
+Input (23 features) → 128 → 256 → 128 → 64 → 32 → 1 (Sigmoid)
+```
 
-### Training with SMOTE
+| Component | Details |
+|-----------|---------|
+| **Layers** | 6 fully connected layers with BatchNorm + Dropout (0.3) |
+| **Activation** | ReLU between hidden layers, Sigmoid for output |
+| **Loss** | BCE loss with cost-sensitive class weights |
+| **Optimizer** | Adam with weight decay (1e-5) |
+| **Scheduler** | ReduceLROnPlateau |
+| **Regularization** | Dropout 0.3, gradient clipping (max_norm=1.0) |
+| **Early Stopping** | Patience=10 epochs |
+
+### Model 2: FraudLSTMNet — Bidirectional LSTM (PyTorch)
+
+```
+Input (batch, seq=10, features) → BiLSTM(2 layers, hidden=64) → FC(128→64→32→1) → Sigmoid
+```
+
+| Component | Details |
+|-----------|---------|
+| **Architecture** | 2-layer Bidirectional LSTM + FC head |
+| **Sequence Length** | 10 transactions per customer |
+| **Hidden Dim** | 64 (bidirectional → 128) |
+| **Loss** | BCE loss with cost-sensitive class weights |
+| **Optimizer** | Adam with weight decay (1e-5) |
+| **Scheduler** | ReduceLROnPlateau |
+| **Early Stopping** | Patience=10 epochs |
+
+### Training Code Example
 ```python
-smote = SMOTE(random_state=42)
-X_resampled, y_resampled = smote.fit_resample(X_train, y_train)
+# MLP Training
+trainer = PyTorchTrainer(input_dim)
+trainer.build_model(dropout_rate=0.3)
+training_history = trainer.train(
+    train_loader, test_loader, y_train,
+    epochs=50, learning_rate=0.001, patience=10
+)
+trainer.save_model('models/')
+
+# LSTM Training
+lstm_trainer = LSTMTrainer(input_dim, seq_length=10)
+lstm_trainer.build_model()
+lstm_history = lstm_trainer.train(
+    train_loader, test_loader, y_train,
+    epochs=50, learning_rate=0.001, patience=10
+)
+lstm_trainer.save_model('models/')
 ```
 
 ---
@@ -169,48 +220,83 @@ Actual Fraud    [FN]     [TP]
 
 ---
 
-## 6. Model Comparison
+## 6. Trained Model Performance
 
-### Example Results Table
+### MLP (FraudDetectorNet) — Test Set Results
 
-| Model | Accuracy | Precision | Recall | F1 Score | ROC-AUC | PR-AUC |
-|-------|----------|-----------|--------|----------|---------|--------|
-| Logistic Regression | 0.92 | 0.75 | 0.68 | 0.71 | 0.88 | 0.62 |
-| Decision Tree | 0.94 | 0.82 | 0.72 | 0.77 | 0.89 | 0.68 |
-| Random Forest | 0.96 | 0.85 | 0.78 | 0.81 | 0.93 | 0.74 |
-| Gradient Boosting | 0.97 | 0.88 | 0.82 | 0.85 | 0.95 | 0.79 |
+| Metric | Value |
+|--------|-------|
+| **Accuracy** | 99.55% |
+| **Precision** | 82.12% |
+| **Recall** | 98.75% |
+| **Specificity** | 99.56% |
+| **F1 Score** | 89.67% |
+| **ROC-AUC** | 99.97% |
+| **PR-AUC** | 99.38% |
 
-**Best Model: Gradient Boosting** (highest F1 Score and PR-AUC)
+### LSTM (FraudLSTMNet) — Test Set Results
+
+| Metric | Value |
+|--------|-------|
+| **Accuracy** | 99.39% |
+| **Precision** | 76.94% |
+| **Recall** | 99.25% |
+| **Specificity** | 99.39% |
+| **F1 Score** | 86.68% |
+| **ROC-AUC** | 99.94% |
+| **PR-AUC** | 99.34% |
+
+### Model Comparison
+
+| Metric | MLP | LSTM | Winner |
+|--------|-----|------|--------|
+| **Accuracy** | 99.55% | 99.39% | MLP (+0.16pp) |
+| **Precision** | 82.12% | 76.94% | MLP (+5.18pp) |
+| **Recall** | 98.75% | 99.25% | LSTM (+0.50pp) |
+| **F1 Score** | 89.67% | 86.68% | MLP (+2.99pp) |
+| **ROC-AUC** | 99.97% | 99.94% | MLP (+0.03pp) |
+| **PR-AUC** | 99.38% | 99.34% | MLP (+0.04pp) |
+
+> **Key Insight**: The MLP model slightly outperforms on most metrics (Precision 82.12% vs 76.94%, F1 Score 89.67% vs 86.68%), while the LSTM excels at Recall (99.25% vs 98.75% — catching more fraud). The LSTM's sequential approach captures temporal patterns across transaction sequences, making it complementary to the MLP.
 
 ---
 
 ## 7. System Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                    FRAUD DETECTION SYSTEM                       │
-├─────────────────────────────────────────────────────────────────┤
-│                                                                 │
-│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐     │
-│  │ Transaction  │───▶│    Feature   │───▶│     ML       │     │
-│  │    Stream    │    │  Processor  │    │    Model     │     │
-│  └──────────────┘    └──────────────┘    └──────┬───────┘     │
-│                                                  │              │
-│                                                  ▼              │
-│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐     │
-│  │   Fraud      │◀───│   Decision   │◀───│  Probability │     │
-│  │    Alert     │    │   Threshold  │    │   Calculator │     │
-│  └──────────────┘    └──────────────┘    └──────────────┘     │
-│                                                                 │
-└─────────────────────────────────────────────────────────────────┘
-
-Components:
-1. Transaction Stream: Real-time transaction data from banking systems
-2. Feature Processor: Extracts and transforms features
-3. ML Model: Gradient Boosting classifier
-4. Probability Calculator: Outputs fraud probability
-5. Decision Threshold: Adjustable threshold (0.5 default)
-6. Fraud Alert System: Notifies fraud team, blocks transaction
+┌──────────────────────────────────────────────────────────────────────┐
+│                     FRAUD DETECTION SYSTEM                          │
+├──────────────────────────────────────────────────────────────────────┤
+│                                                                      │
+│  ┌──────────────┐     ┌──────────────┐     ┌──────────────┐        │
+│  │   Streamlit  │     │   FastAPI    │     │   React      │        │
+│  │     App      │     │   Backend    │     │   Frontend   │        │
+│  └──────┬───────┘     └──────┬────────┘     └──────┬───────┘        │
+│         │                    │                    │                  │
+│         ▼                    ▼                    ▼                  │
+│  ┌────────────────────────────────────────────────────────┐        │
+│  │              src/ (Python ML Pipeline)                 │        │
+│  │  ┌────────────┐ ┌────────────┐ ┌────────────────────┐ │        │
+│  │  │   Data     │ │  Feature   │ │   MLP DNN          │ │        │
+│  │  │  Pipeline  │ │ Engineering│ │   (6-layer)        │ │        │
+│  │  └────────────┘ └────────────┘ └────────────────────┘ │        │
+│  │  ┌────────────┐ ┌────────────┐ ┌────────────────────┐ │        │
+│  │  │   SMOTE    │ │  Scaling   │ │   Bidirectional    │ │        │
+│  │  │  (balance) │ │ (Robust)   │ │   LSTM (sequence)  │ │        │
+│  │  └────────────┘ └────────────┘ └────────────────────┘ │        │
+│  │  ┌────────────────────────────────────────────────────┐│        │
+│  │  │         Evaluation & Prediction Module             ││        │
+│  │  └────────────────────────────────────────────────────┘│        │
+│  └────────────────────────────────────────────────────────┘        │
+│                              │                                     │
+│                              ▼                                     │
+│  ┌────────────────────────────────────────────────────────┐        │
+│  │              models/ (Saved Artifacts)                  │        │
+│  │   MLP: fraud_detector.pt   │  LSTM: fraud_detector_lstm.pt     │
+│  │   scaler.pkl  │  feature_names.json  │  eval_metrics*.json     │
+│  └────────────────────────────────────────────────────────┘        │
+│                                                                      │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -224,19 +310,43 @@ Components:
 | Endpoint | Method | Description |
 |----------|--------|-------------|
 | `/` | GET | API information |
-| `/health` | GET | Health check |
-| `/predict` | POST | Single transaction prediction |
-| `/batch-predict` | POST | Batch prediction |
-| `/train` | POST | Train model |
+| `/health` | GET | Health check (MLP + LSTM status) |
+| `/predict` | POST | MLP single transaction prediction |
+| `/predict-lstm` | POST | LSTM single transaction prediction |
+| `/batch-predict` | POST | MLP batch prediction |
+| `/model-info` | GET | MLP model architecture info |
+| `/model-info-lstm` | GET | LSTM model architecture info |
+| `/metrics` | GET | MLP evaluation metrics |
+| `/metrics-lstm` | GET | LSTM evaluation metrics |
+| `/training-history` | GET | MLP training history |
+| `/training-history-lstm` | GET | LSTM training history |
+| `/train` | POST | Train MLP model |
+| `/train-lstm` | POST | Train LSTM model |
 
-#### Example Request
+#### Example Request (MLP)
 ```bash
 curl -X POST "http://localhost:8000/predict" \
   -H "Content-Type: application/json" \
   -d '{
     "transaction_amount": 1500.00,
     "transaction_time": 36000,
-    "location": "NYC",
+    "location": "Mumbai",
+    "device_id": "DEV001",
+    "merchant_category": "retail",
+    "account_age_days": 365,
+    "transaction_count_24h": 3,
+    "avg_transaction_amount": 150.00
+  }'
+```
+
+#### Example Request (LSTM)
+```bash
+curl -X POST "http://localhost:8000/predict-lstm" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "transaction_amount": 1500.00,
+    "transaction_time": 36000,
+    "location": "Mumbai",
     "device_id": "DEV001",
     "merchant_category": "retail",
     "account_age_days": 365,
@@ -304,16 +414,19 @@ streamlit run streamlit_app.py
 
 ## 11. Future Improvements
 
-### Deep Learning Approaches
-- **Autoencoders**: Learn normal transaction patterns, flag anomalies
-- **LSTM/GRU**: Capture temporal patterns in transaction sequences
-- **Transformer Models**: Handle sequential transaction data
-- **Neural Networks**: Deep feature learning
+### Production Readiness
+- **Docker containerization** for reproducible deployment
+- **CI/CD pipeline** with GitHub Actions
+- **Structured logging** (JSON logs for production monitoring)
+- **API rate limiting** with slowapi
+- **Model versioning** to track deployed model versions
+- **Environment-based configuration** via config.yaml or env variables
 
-### Graph Fraud Detection
-- **Graph Neural Networks (GNN)**: Detect fraud rings
-- **Entity Resolution**: Link related entities
-- **Social Network Analysis**: Identify suspicious networks
+### Advanced Deep Learning Approaches
+- **Autoencoders**: Learn normal transaction patterns, flag anomalies
+- **Transformer Models**: Handle sequential transaction data with attention mechanisms
+- **Graph Neural Networks (GNN)**: Detect fraud rings and suspicious networks
+- **Ensemble Methods**: Combine MLP + LSTM predictions for improved accuracy
 
 ### Production Considerations
 - Model monitoring and drift detection
@@ -331,27 +444,57 @@ streamlit run streamlit_app.py
 fraud_detection_project/
 │
 ├── data/                      # Data files
-│   └── (your dataset.csv)
-│
-├── notebooks/                 # Jupyter notebooks
-│   └── exploration.ipynb
+│   └── transactions.csv       # Synthetic dataset (100K transactions)
 │
 ├── src/                       # Source code
 │   ├── __init__.py
-│   ├── data_pipeline.py      # Data loading & preprocessing
+│   ├── data_pipeline.py       # Data loading & preprocessing
 │   ├── preprocessing.py       # Scaling & SMOTE
-│   ├── train_model.py         # Model training
+│   ├── pytorch_model.py       # MLP + LSTM model definitions
+│   ├── train_model.py         # Training pipelines (MLP + LSTM)
 │   ├── evaluate.py            # Evaluation metrics
-│   └── predict.py             # Prediction module
+│   └── predict.py             # Prediction module (MLP + LSTM)
 │
-├── models/                    # Saved models
-│   ├── gradient_boosting_model.pkl
-│   └── scaler.pkl
+├── models/                    # Saved models & metrics
+│   ├── fraud_detector.pt      # Trained MLP model
+│   ├── fraud_detector_lstm.pt # Trained LSTM model
+│   ├── scaler.pkl             # Fitted RobustScaler
+│   ├── feature_names.json     # MLP feature list
+│   ├── feature_names_lstm.json # LSTM feature list
+│   ├── training_history.json  # MLP epoch-by-epoch metrics
+│   ├── training_history_lstm.json # LSTM epoch-by-epoch metrics
+│   ├── eval_metrics.json      # MLP final metrics
+│   └── eval_metrics_lstm.json # LSTM final metrics
 │
 ├── api/                       # FastAPI app
-│   └── app.py
+│   ├── __init__.py
+│   └── app.py                 # REST API (MLP + LSTM endpoints)
+│
+├── frontend/                  # React + Vite web application
+│   ├── src/
+│   │   ├── App.jsx            # Main app with routing
+│   │   ├── api.js             # API client (MLP + LSTM)
+│   │   ├── components/
+│   │   │   └── Sidebar.jsx    # Navigation + model status
+│   │   └── pages/
+│   │       ├── Dashboard.jsx  # Dual-model comparison dashboard
+│   │       ├── Predict.jsx    # Fraud prediction (MLP/LSTM toggle)
+│   │       ├── Training.jsx   # Model training (MLP/LSTM)
+│   │       ├── Metrics.jsx    # Side-by-side metrics comparison
+│   │       └── About.jsx      # Tech stack & architecture
+│   └── package.json
+│
+├── tests/                     # Test suite (97 tests)
+│   ├── __init__.py
+│   ├── conftest.py           # Shared fixtures
+│   ├── test_data_pipeline.py
+│   ├── test_preprocessing.py
+│   ├── test_evaluate.py
+│   └── test_predict.py
 │
 ├── streamlit_app.py           # Streamlit demo
+│
+├── pytest.ini                 # Test configuration
 │
 ├── requirements.txt           # Dependencies
 │
@@ -360,27 +503,77 @@ fraud_detection_project/
 
 ---
 
-## Quick Start
+## Quick Start & Running the Project
 
-### 1. Install Dependencies
+Follow these step-by-step instructions to set up and run the entire project, including the deep learning pipeline, the REST API, the React web application, and the Streamlit dashboard.
+
+### 1. Prerequisites
+- **Python 3.8+**
+- **Node.js 18+** & **npm**
+
+---
+
+### 2. Backend Setup & Training
+
+#### Step A: Install Python Dependencies
+Install the required packages listed in `requirements.txt`:
 ```bash
 pip install -r requirements.txt
 ```
 
-### 2. Run Training
+#### Step B: Train the Deep Learning Models
+Run the training pipeline to process the dataset, train both the MLP and LSTM models, and save the model artifacts (saved under `models/`):
+
+**Train MLP model:**
 ```bash
-cd fraud_detection_project
 python -m src.train_model
 ```
 
-### 3. Run API
+**Train LSTM model (optional — can also be triggered from the web UI):**
+Training the LSTM model is done via the FastAPI `/train-lstm` endpoint or from the React frontend's Training page.
+
+#### Step C: Start the FastAPI Backend API
+Launch the FastAPI development server. It will load both the MLP and LSTM models and run on `http://localhost:8000`:
 ```bash
 uvicorn api.app:app --reload
 ```
 
-### 4. Run Streamlit App
+---
+
+### 3. Frontend Setup (React + Vite)
+
+Open a new terminal window/tab to run the web application.
+
+#### Step A: Navigate to Frontend Directory
+```bash
+cd frontend
+```
+
+#### Step B: Install Node Dependencies
+```bash
+npm install
+```
+
+#### Step C: Start the React App
+Start the Vite development server. The React web application will be accessible at `http://localhost:5173/`:
+```bash
+npm run dev
+```
+
+---
+
+### 4. Interactive Dashboards & Testing
+
+#### Streamlit Admin Dashboard
+To run the Streamlit monitoring and evaluation dashboard (accessible at `http://localhost:8501/`):
 ```bash
 streamlit run streamlit_app.py
+```
+
+#### Running the Test Suite
+To run the comprehensive suite of 97 unit tests:
+```bash
+pytest tests/ -v
 ```
 
 ---

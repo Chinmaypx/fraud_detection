@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { predictFraud } from '../api';
+import { predictFraud, predictFraudLSTM } from '../api';
 
 /**
  * Generate a human-readable analysis summary based on the transaction inputs
@@ -20,21 +20,18 @@ function generateAnalysisSummary(form, result) {
   // Amount analysis
   if (amount > 2000) {
     factors.push({
-      icon: '💰',
       label: 'Very high transaction amount',
       detail: `₹${amount.toLocaleString()} is significantly above normal spending patterns`,
       severity: 'high',
     });
   } else if (amount > 500) {
     factors.push({
-      icon: '💳',
       label: 'Above-average transaction amount',
       detail: `₹${amount.toLocaleString()} is higher than typical transactions`,
       severity: 'medium',
     });
   } else {
     positiveFactors.push({
-      icon: '✅',
       label: 'Normal transaction amount',
       detail: `₹${amount.toLocaleString()} is within typical spending range`,
     });
@@ -43,21 +40,18 @@ function generateAnalysisSummary(form, result) {
   // Amount vs average ratio
   if (amountRatio > 5) {
     factors.push({
-      icon: '📊',
       label: 'Amount far exceeds personal average',
       detail: `${amountRatio.toFixed(1)}x higher than average (₹${avgAmount})`,
       severity: 'high',
     });
   } else if (amountRatio > 2) {
     factors.push({
-      icon: '📈',
       label: 'Amount above personal average',
       detail: `${amountRatio.toFixed(1)}x higher than average (₹${avgAmount})`,
       severity: 'medium',
     });
   } else {
     positiveFactors.push({
-      icon: '✅',
       label: 'Amount consistent with spending history',
       detail: `Within ${amountRatio.toFixed(1)}x of average (₹${avgAmount})`,
     });
@@ -66,14 +60,12 @@ function generateAnalysisSummary(form, result) {
   // Time analysis
   if (hourOfDay >= 22 || hourOfDay <= 5) {
     factors.push({
-      icon: '🌙',
       label: 'Late night / early morning transaction',
       detail: `Transaction at ${hourOfDay}:00 — unusual hours with higher fraud rates`,
       severity: 'medium',
     });
   } else if (hourOfDay >= 9 && hourOfDay <= 20) {
     positiveFactors.push({
-      icon: '☀️',
       label: 'Normal business hours',
       detail: `Transaction at ${hourOfDay}:00 — typical activity window`,
     });
@@ -82,21 +74,18 @@ function generateAnalysisSummary(form, result) {
   // Transaction frequency
   if (txCount24h > 15) {
     factors.push({
-      icon: '⚡',
       label: 'Extremely high transaction frequency',
       detail: `${txCount24h} transactions in 24h suggests potential card testing or rapid fraud`,
       severity: 'high',
     });
   } else if (txCount24h > 10) {
     factors.push({
-      icon: '🔄',
       label: 'High transaction frequency',
       detail: `${txCount24h} transactions in 24h is above normal patterns`,
       severity: 'medium',
     });
   } else {
     positiveFactors.push({
-      icon: '✅',
       label: 'Normal transaction frequency',
       detail: `${txCount24h} transactions in 24h is within normal range`,
     });
@@ -105,21 +94,18 @@ function generateAnalysisSummary(form, result) {
   // Account age
   if (accountAge < 30) {
     factors.push({
-      icon: '🆕',
       label: 'Very new account',
       detail: `Account is only ${accountAge} days old — new accounts have higher fraud risk`,
       severity: 'high',
     });
   } else if (accountAge < 90) {
     factors.push({
-      icon: '📅',
       label: 'Relatively new account',
       detail: `Account is ${accountAge} days old — still within the high-risk period`,
       severity: 'medium',
     });
   } else {
     positiveFactors.push({
-      icon: '🏛️',
       label: 'Established account',
       detail: `Account is ${accountAge} days old with established history`,
     });
@@ -128,14 +114,12 @@ function generateAnalysisSummary(form, result) {
   // Merchant category
   if (category === 'online') {
     factors.push({
-      icon: '🌐',
       label: 'Online merchant category',
       detail: 'Online transactions carry higher fraud risk due to card-not-present nature',
       severity: 'medium',
     });
   } else {
     positiveFactors.push({
-      icon: '🏪',
       label: `In-person ${category} merchant`,
       detail: 'Physical merchant transactions have lower fraud rates',
     });
@@ -160,6 +144,7 @@ export default function Predict() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [analysisForm, setAnalysisForm] = useState(null);
+  const [selectedModel, setSelectedModel] = useState('mlp');
 
   const handleChange = (field, value) => {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -171,8 +156,9 @@ export default function Predict() {
     setResult(null);
     setAnalysisForm(null);
     try {
-      const res = await predictFraud(form);
-      setResult(res);
+      const predictFn = selectedModel === 'lstm' ? predictFraudLSTM : predictFraud;
+      const res = await predictFn(form);
+      setResult({ ...res, model_used: selectedModel });
       setAnalysisForm({ ...form });
     } catch (err) {
       setError(err.message);
@@ -196,8 +182,29 @@ export default function Predict() {
   return (
     <div>
       <div className="page-header">
-        <h2>🔍 Fraud Prediction</h2>
-        <p>Analyze a transaction for fraud risk using the PyTorch neural network</p>
+        <h2>Fraud Prediction</h2>
+        <p>Analyze a transaction for fraud risk using deep learning models</p>
+      </div>
+
+      {/* Model Selector */}
+      <div className="model-selector">
+        <span className="model-selector-label">Model</span>
+        <div className="model-selector-pills">
+          <button
+            className={`model-pill ${selectedModel === 'mlp' ? 'active' : ''}`}
+            onClick={() => setSelectedModel('mlp')}
+          >
+            MLP
+            <span className="model-pill-badge">6-Layer DNN</span>
+          </button>
+          <button
+            className={`model-pill ${selectedModel === 'lstm' ? 'active' : ''}`}
+            onClick={() => setSelectedModel('lstm')}
+          >
+            LSTM
+            <span className="model-pill-badge">Sequence</span>
+          </button>
+        </div>
       </div>
 
       <div className="grid-2">
@@ -205,6 +212,9 @@ export default function Predict() {
         <div className="card animate-in">
           <div className="card-header">
             <span className="card-title">Transaction Details</span>
+            <span className={`model-tag ${selectedModel}`}>
+              {selectedModel === 'lstm' ? 'LSTM Model' : 'MLP Model'}
+            </span>
           </div>
 
           <div className="grid-2" style={{ gap: 'var(--space-md)' }}>
@@ -329,10 +339,10 @@ export default function Predict() {
             {loading ? (
               <>
                 <div className="spinner" style={{ width: '18px', height: '18px', borderWidth: '2px' }}></div>
-                Analyzing...
+                Analyzing with {selectedModel === 'lstm' ? 'LSTM' : 'MLP'}...
               </>
             ) : (
-              <>🔍 Analyze Transaction</>
+              <>Analyze Transaction ({selectedModel === 'lstm' ? 'LSTM' : 'MLP'})</>
             )}
           </button>
         </div>
@@ -341,11 +351,15 @@ export default function Predict() {
         <div className="card animate-in animate-in-delay-1">
           <div className="card-header">
             <span className="card-title">Analysis Result</span>
+            {result && (
+              <span className={`model-tag ${result.model_used}`}>
+                {result.model_used === 'lstm' ? 'LSTM' : 'MLP'}
+              </span>
+            )}
           </div>
 
           {error && (
             <div className="prediction-result danger">
-              <div className="result-icon">⚠️</div>
               <div className="result-label">Error</div>
               <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>{error}</p>
             </div>
@@ -353,9 +367,6 @@ export default function Predict() {
 
           {result && (
             <div className={`prediction-result ${riskClass}`}>
-              <div className="result-icon">
-                {result.is_fraud ? '🚨' : '✅'}
-              </div>
               <div className="result-label">
                 {result.is_fraud ? 'FRAUD DETECTED' : 'LEGITIMATE'}
               </div>
@@ -376,8 +387,8 @@ export default function Predict() {
                   <div className="result-detail-value">{result.risk_level}</div>
                 </div>
                 <div className="result-detail">
-                  <div className="result-detail-label">Verdict</div>
-                  <div className="result-detail-value">{result.is_fraud ? 'Flagged' : 'Clear'}</div>
+                  <div className="result-detail-label">Model</div>
+                  <div className="result-detail-value">{result.model_used === 'lstm' ? 'LSTM' : 'MLP (DNN)'}</div>
                 </div>
               </div>
 
@@ -408,10 +419,9 @@ export default function Predict() {
 
           {!result && !error && (
             <div className="empty-state">
-              <div className="icon">🔮</div>
               <p>Submit a transaction to see the analysis result</p>
               <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '8px' }}>
-                The PyTorch neural network will analyze the transaction and return a fraud probability score
+                Choose MLP or LSTM model above, then analyze the transaction
               </p>
             </div>
           )}
@@ -423,7 +433,7 @@ export default function Predict() {
         <div className="card animate-in" style={{ marginTop: 'var(--space-xl)' }}>
           <div className="card-header">
             <span className="card-title">
-              {result.is_fraud ? '🚨' : '🔍'} Analysis Summary — Why this transaction is {result.is_fraud ? 'Fraudulent' : 'Legitimate'}
+              Analysis Summary — Why this transaction is {result.is_fraud ? 'Fraudulent' : 'Legitimate'}
             </span>
           </div>
 
@@ -431,12 +441,14 @@ export default function Predict() {
             <p>
               {result.is_fraud ? (
                 <>
-                  This transaction has been flagged as <strong>potentially fraudulent</strong> with a {(result.fraud_probability * 100).toFixed(1)}% confidence score.
+                  This transaction has been flagged as <strong>potentially fraudulent</strong> with a {(result.fraud_probability * 100).toFixed(1)}% confidence score
+                  using the <strong>{result.model_used === 'lstm' ? 'LSTM' : 'MLP'}</strong> model.
                   The following risk factors contributed to this assessment:
                 </>
               ) : (
                 <>
-                  This transaction appears <strong>legitimate</strong> with only a {(result.fraud_probability * 100).toFixed(1)}% fraud probability.
+                  This transaction appears <strong>legitimate</strong> with only a {(result.fraud_probability * 100).toFixed(1)}% fraud probability
+                  using the <strong>{result.model_used === 'lstm' ? 'LSTM' : 'MLP'}</strong> model.
                   The following factors support this assessment:
                 </>
               )}
@@ -447,12 +459,11 @@ export default function Predict() {
           {analysis.factors.length > 0 && (
             <div className="analysis-section">
               <div className="analysis-section-header risk">
-                <span>⚠️ Risk Factors ({analysis.factors.length})</span>
+                <span>Risk Factors ({analysis.factors.length})</span>
               </div>
               <div className="analysis-factors-list">
                 {analysis.factors.map((f, i) => (
                   <div key={i} className={`analysis-factor-item ${f.severity}`}>
-                    <div className="analysis-factor-icon">{f.icon}</div>
                     <div className="analysis-factor-content">
                       <div className="analysis-factor-label">{f.label}</div>
                       <div className="analysis-factor-detail">{f.detail}</div>
@@ -470,12 +481,11 @@ export default function Predict() {
           {analysis.positiveFactors.length > 0 && (
             <div className="analysis-section">
               <div className="analysis-section-header safe">
-                <span>✅ Positive Indicators ({analysis.positiveFactors.length})</span>
+                <span>Positive Indicators ({analysis.positiveFactors.length})</span>
               </div>
               <div className="analysis-factors-list">
                 {analysis.positiveFactors.map((f, i) => (
                   <div key={i} className="analysis-factor-item positive">
-                    <div className="analysis-factor-icon">{f.icon}</div>
                     <div className="analysis-factor-content">
                       <div className="analysis-factor-label">{f.label}</div>
                       <div className="analysis-factor-detail">{f.detail}</div>
@@ -488,7 +498,6 @@ export default function Predict() {
 
           {/* Verdict summary */}
           <div className={`analysis-verdict ${result.is_fraud ? 'danger' : 'safe'}`}>
-            <div className="analysis-verdict-icon">{result.is_fraud ? '🛑' : '🟢'}</div>
             <div className="analysis-verdict-text">
               <strong>Verdict:</strong>{' '}
               {result.is_fraud ? (
@@ -512,7 +521,7 @@ export default function Predict() {
       {/* Quick Test Scenarios */}
       <div className="card animate-in" style={{ marginTop: 'var(--space-xl)' }}>
         <div className="card-header">
-          <span className="card-title">⚡ Quick Test Scenarios</span>
+          <span className="card-title">Quick Test Scenarios</span>
         </div>
         <div style={{ display: 'flex', gap: 'var(--space-md)', flexWrap: 'wrap' }}>
           <button
@@ -532,7 +541,7 @@ export default function Predict() {
               setAnalysisForm(null);
             }}
           >
-            ✅ Normal Transaction
+            Normal Transaction
           </button>
           <button
             className="btn btn-outline"
@@ -551,7 +560,7 @@ export default function Predict() {
               setAnalysisForm(null);
             }}
           >
-            🚨 Suspicious Transaction
+            Suspicious Transaction
           </button>
           <button
             className="btn btn-outline"
@@ -570,7 +579,7 @@ export default function Predict() {
               setAnalysisForm(null);
             }}
           >
-            ⚠️ Night Transaction
+            Night Transaction
           </button>
         </div>
       </div>

@@ -59,8 +59,8 @@ class ModelEvaluator:
         Get confusion matrix
         
         In fraud detection:
-        - True Positive (TP): Correctly detected fraud ✓
-        - True Negative (TN): Correctly identified legitimate ✓
+        - True Positive (TP): Correctly detected fraud (Good)
+        - True Negative (TN): Correctly identified legitimate (Good)
         - False Positive (FP): Legitimate flagged as fraud (customer inconvenience)
         - False Negative (FN): Missed fraud (financial loss) - MOST DANGEROUS!
         """
@@ -109,9 +109,9 @@ class ModelEvaluator:
         
         print(f"\n--- Error Analysis: {self.model_name} ---")
         print(f"False Negatives (Missed Fraud): {fn} ({fn/total*100:.2f}%)")
-        print(f"  → Financial Loss Risk: HIGH")
+        print(f"  -> Financial Loss Risk: HIGH")
         print(f"False Positives (False Alarms): {fp} ({fp/total*100:.2f}%)")
-        print(f"  → Customer Experience Impact: MEDIUM")
+        print(f"  -> Customer Experience Impact: MEDIUM")
         
         return analysis
     

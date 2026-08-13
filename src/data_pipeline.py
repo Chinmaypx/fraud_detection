@@ -138,9 +138,9 @@ class DataPipeline:
         for col in self.df.columns:
             if self.df[col].isnull().sum() > 0:
                 if self.df[col].dtype in ['int64', 'float64']:
-                    self.df[col].fillna(self.df[col].median(), inplace=True)
+                    self.df[col] = self.df[col].fillna(self.df[col].median())
                 else:
-                    self.df[col].fillna(self.df[col].mode()[0], inplace=True)
+                    self.df[col] = self.df[col].fillna(self.df[col].mode()[0])
         
         print("Missing values imputed")
         return self.df

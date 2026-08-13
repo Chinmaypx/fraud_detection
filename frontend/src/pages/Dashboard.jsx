@@ -1,21 +1,30 @@
 import { useEffect, useState } from 'react';
-import { getMetrics, getTrainingHistory, getModelInfo } from '../api';
+import { getMetrics, getLSTMMetrics, getTrainingHistory, getLSTMTrainingHistory, getModelInfo, getLSTMModelInfo } from '../api';
 
 export default function Dashboard() {
   const [metrics, setMetrics] = useState(null);
+  const [lstmMetrics, setLstmMetrics] = useState(null);
   const [history, setHistory] = useState(null);
+  const [lstmHistory, setLstmHistory] = useState(null);
   const [modelInfo, setModelInfo] = useState(null);
+  const [lstmModelInfo, setLstmModelInfo] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     Promise.all([
       getMetrics().catch(() => null),
+      getLSTMMetrics().catch(() => null),
       getTrainingHistory().catch(() => null),
+      getLSTMTrainingHistory().catch(() => null),
       getModelInfo().catch(() => null),
-    ]).then(([m, h, mi]) => {
+      getLSTMModelInfo().catch(() => null),
+    ]).then(([m, lm, h, lh, mi, lmi]) => {
       setMetrics(m?.message ? null : m);
+      setLstmMetrics(lm?.message ? null : lm);
       setHistory(h?.message ? null : h);
+      setLstmHistory(lh?.message ? null : lh);
       setModelInfo(mi?.message ? null : mi);
+      setLstmModelInfo(lmi?.message ? null : lmi);
       setLoading(false);
     });
   }, []);
@@ -29,59 +38,225 @@ export default function Dashboard() {
     );
   }
 
-  const statCards = metrics
-    ? [
-        { label: 'Accuracy', value: (metrics['Accuracy'] * 100).toFixed(1) + '%', type: 'neutral', delta: 'Overall correct predictions' },
-        { label: 'F1 Score', value: (metrics['F1 Score'] * 100).toFixed(1) + '%', type: 'positive', delta: 'Harmonic mean of P & R' },
-        { label: 'Recall', value: (metrics['Recall (Sensitivity)'] * 100).toFixed(1) + '%', type: 'warning', delta: 'Fraud catch rate' },
-        { label: 'ROC-AUC', value: (metrics['ROC-AUC'] * 100).toFixed(1) + '%', type: 'neutral', delta: 'Discrimination ability' },
-      ]
-    : [
-        { label: 'Accuracy', value: '—', type: 'neutral', delta: 'Train model first' },
-        { label: 'F1 Score', value: '—', type: 'neutral', delta: 'Train model first' },
-        { label: 'Recall', value: '—', type: 'neutral', delta: 'Train model first' },
-        { label: 'ROC-AUC', value: '—', type: 'neutral', delta: 'Train model first' },
-      ];
+  const makeStatCard = (label, mlpVal, lstmVal, delta) => ({
+    label,
+    mlp: mlpVal != null ? (mlpVal * 100).toFixed(1) + '%' : '—',
+    lstm: lstmVal != null ? (lstmVal * 100).toFixed(1) + '%' : '—',
+    mlpRaw: mlpVal,
+    lstmRaw: lstmVal,
+    delta,
+  });
+
+  const comparisonCards = [
+    makeStatCard('Accuracy', metrics?.['Accuracy'], lstmMetrics?.['Accuracy'], 'Overall correct predictions'),
+    makeStatCard('F1 Score', metrics?.['F1 Score'], lstmMetrics?.['F1 Score'], 'Harmonic mean of P & R'),
+    makeStatCard('Recall', metrics?.['Recall (Sensitivity)'], lstmMetrics?.['Recall (Sensitivity)'], 'Fraud catch rate'),
+    makeStatCard('Precision', metrics?.['Precision'], lstmMetrics?.['Precision'], 'Accuracy of fraud flags'),
+    makeStatCard('ROC-AUC', metrics?.['ROC-AUC'], lstmMetrics?.['ROC-AUC'], 'Discrimination ability'),
+    makeStatCard('PR-AUC', metrics?.['PR-AUC'], lstmMetrics?.['PR-AUC'], 'Best for imbalanced data'),
+  ];
+
+  const mlpAccuracy = metrics?.['Accuracy'];
+  const lstmAccuracy = lstmMetrics?.['Accuracy'];
 
   return (
     <div>
       <div className="page-header">
         <h2>Dashboard</h2>
-        <p>Overview of your PyTorch fraud detection model performance</p>
+        <p>Comparative overview of MLP & LSTM fraud detection models</p>
       </div>
 
-      {/* Stat Cards */}
-      <div className="stats-grid">
-        {statCards.map((stat, i) => (
-          <div key={stat.label} className={`stat-card animate-in animate-in-delay-${i + 1}`}>
+      {/* Accuracy Score Hero Cards */}
+      <div className="grid-2" style={{ marginBottom: 'var(--space-xl)' }}>
+        {/* MLP Accuracy Card */}
+        <div className="card animate-in" style={{ position: 'relative', overflow: 'hidden' }}>
+          <div style={{
+            position: 'absolute', top: 0, left: 0, right: 0, height: '4px',
+            background: 'linear-gradient(90deg, #3b82f6, #60a5fa)',
+          }}></div>
+          <div className="card-header">
+            <span className="card-title">MLP Accuracy</span>
+            <span className="model-tag mlp">MLP</span>
+          </div>
+          <div style={{ textAlign: 'center', padding: 'var(--space-lg) 0' }}>
+            <div style={{
+              fontSize: '3.5rem', fontWeight: 800,
+              background: 'linear-gradient(135deg, #3b82f6, #60a5fa)',
+              WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+              lineHeight: 1.1,
+            }}>
+              {mlpAccuracy != null ? (mlpAccuracy * 100).toFixed(2) + '%' : '—'}
+            </div>
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '8px' }}>
+              Overall Correct Predictions
+            </div>
+            {mlpAccuracy != null && (
+              <div className="progress-bar-container" style={{ marginTop: 'var(--space-md)', height: '10px' }}>
+                <div className="progress-bar-fill" style={{
+                  width: `${mlpAccuracy * 100}%`,
+                  background: 'linear-gradient(90deg, #3b82f6, #60a5fa)',
+                  transition: 'width 1.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                }}></div>
+              </div>
+            )}
+            <div style={{
+              display: 'inline-flex', alignItems: 'center', gap: '6px',
+              marginTop: 'var(--space-md)', padding: '4px 12px',
+              background: 'rgba(59, 130, 246, 0.1)', borderRadius: '99px',
+              fontSize: '0.75rem', color: '#3b82f6',
+            }}>
+              <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#3b82f6' }}></span>
+              {mlpAccuracy != null ? 'Model Active' : 'Not Trained'}
+            </div>
+          </div>
+        </div>
+
+        {/* LSTM Accuracy Card */}
+        <div className="card animate-in animate-in-delay-1" style={{ position: 'relative', overflow: 'hidden' }}>
+          <div style={{
+            position: 'absolute', top: 0, left: 0, right: 0, height: '4px',
+            background: 'linear-gradient(90deg, #8b5cf6, #a78bfa)',
+          }}></div>
+          <div className="card-header">
+            <span className="card-title">LSTM Accuracy</span>
+            <span className="model-tag lstm">LSTM</span>
+          </div>
+          <div style={{ textAlign: 'center', padding: 'var(--space-lg) 0' }}>
+            <div style={{
+              fontSize: '3.5rem', fontWeight: 800,
+              background: 'linear-gradient(135deg, #8b5cf6, #a78bfa)',
+              WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+              lineHeight: 1.1,
+            }}>
+              {lstmAccuracy != null ? (lstmAccuracy * 100).toFixed(2) + '%' : '—'}
+            </div>
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginTop: '8px' }}>
+              Overall Correct Predictions
+            </div>
+            {lstmAccuracy != null && (
+              <div className="progress-bar-container" style={{ marginTop: 'var(--space-md)', height: '10px' }}>
+                <div className="progress-bar-fill" style={{
+                  width: `${lstmAccuracy * 100}%`,
+                  background: 'linear-gradient(90deg, #8b5cf6, #a78bfa)',
+                  transition: 'width 1.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                }}></div>
+              </div>
+            )}
+            <div style={{
+              display: 'inline-flex', alignItems: 'center', gap: '6px',
+              marginTop: 'var(--space-md)', padding: '4px 12px',
+              background: 'rgba(139, 92, 246, 0.1)', borderRadius: '99px',
+              fontSize: '0.75rem', color: '#8b5cf6',
+            }}>
+              <span style={{ width: '6px', height: '6px', borderRadius: '50%', background: '#8b5cf6' }}></span>
+              {lstmAccuracy != null ? 'Model Active' : 'Not Trained'}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Accuracy Comparison Delta */}
+      {mlpAccuracy != null && lstmAccuracy != null && (
+        <div className="card animate-in animate-in-delay-2" style={{ marginBottom: 'var(--space-xl)', textAlign: 'center', padding: 'var(--space-md) var(--space-lg)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 'var(--space-lg)', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span className="model-tag mlp" style={{ fontSize: '0.65rem' }}>MLP</span>
+              <span style={{ fontSize: '1.1rem', fontWeight: 700, color: '#3b82f6' }}>{(mlpAccuracy * 100).toFixed(2)}%</span>
+            </div>
+            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>vs</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span className="model-tag lstm" style={{ fontSize: '0.65rem' }}>LSTM</span>
+              <span style={{ fontSize: '1.1rem', fontWeight: 700, color: '#8b5cf6' }}>{(lstmAccuracy * 100).toFixed(2)}%</span>
+            </div>
+            <div style={{
+              padding: '4px 14px', borderRadius: '99px', fontSize: '0.75rem', fontWeight: 600,
+              background: mlpAccuracy > lstmAccuracy ? 'rgba(59, 130, 246, 0.12)' : mlpAccuracy < lstmAccuracy ? 'rgba(139, 92, 246, 0.12)' : 'rgba(100,100,100,0.12)',
+              color: mlpAccuracy > lstmAccuracy ? '#3b82f6' : mlpAccuracy < lstmAccuracy ? '#8b5cf6' : 'var(--text-muted)',
+            }}>
+              {mlpAccuracy > lstmAccuracy
+                ? `MLP leads by ${((mlpAccuracy - lstmAccuracy) * 100).toFixed(3)}pp`
+                : mlpAccuracy < lstmAccuracy
+                ? `LSTM leads by ${((lstmAccuracy - mlpAccuracy) * 100).toFixed(3)}pp`
+                : 'Tied'}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Model Comparison Cards */}
+      <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
+        {comparisonCards.map((stat, i) => (
+          <div key={stat.label} className={`stat-card animate-in animate-in-delay-${Math.min(i + 1, 4)}`}>
             <div className="stat-label">{stat.label}</div>
-            <div className={`stat-value ${stat.type}`}>{stat.value}</div>
+            <div className="model-comparison-values">
+              <div className="model-comparison-item">
+                <span className="model-comparison-tag mlp">MLP</span>
+                <span className="stat-value" style={{ fontSize: '1.3rem', color: stat.mlpRaw != null ? '#3b82f6' : 'var(--text-muted)' }}>{stat.mlp}</span>
+              </div>
+              <div className="model-comparison-item">
+                <span className="model-comparison-tag lstm">LSTM</span>
+                <span className="stat-value" style={{ fontSize: '1.3rem', color: stat.lstmRaw != null ? '#8b5cf6' : 'var(--text-muted)' }}>{stat.lstm}</span>
+              </div>
+            </div>
+            {stat.mlpRaw != null && stat.lstmRaw != null && (
+              <div className="model-comparison-delta">
+                {stat.mlpRaw > stat.lstmRaw ? (
+                  <span style={{ color: '#3b82f6', fontSize: '0.7rem' }}>MLP +{((stat.mlpRaw - stat.lstmRaw) * 100).toFixed(2)}pp</span>
+                ) : stat.lstmRaw > stat.mlpRaw ? (
+                  <span style={{ color: '#8b5cf6', fontSize: '0.7rem' }}>LSTM +{((stat.lstmRaw - stat.mlpRaw) * 100).toFixed(2)}pp</span>
+                ) : (
+                  <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>Tied</span>
+                )}
+              </div>
+            )}
             <div className="stat-delta">{stat.delta}</div>
           </div>
         ))}
       </div>
 
       <div className="grid-2">
-        {/* Training Loss Chart */}
+        {/* MLP Training Progress */}
         <div className="card animate-in animate-in-delay-2">
           <div className="card-header">
-            <span className="card-title">📉 Training Progress</span>
-            {history && <span className="card-subtitle">{history.train_loss?.length || 0} epochs</span>}
+            <span className="card-title">MLP Training Progress</span>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <span className="model-tag mlp">MLP</span>
+              {history && <span className="card-subtitle">{history.train_loss?.length || 0} epochs</span>}
+            </div>
           </div>
           {history ? (
             <LossChart trainLoss={history.train_loss} valLoss={history.val_loss} />
           ) : (
             <div className="chart-placeholder">
-              <span style={{ fontSize: '2rem', marginBottom: '8px' }}>📊</span>
-              <span>Train a model to see loss curves</span>
+              <span>Train MLP model to see loss curves</span>
             </div>
           )}
         </div>
 
-        {/* Model Architecture */}
+        {/* LSTM Training Progress */}
         <div className="card animate-in animate-in-delay-3">
           <div className="card-header">
-            <span className="card-title">🧠 Model Architecture</span>
+            <span className="card-title">LSTM Training Progress</span>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <span className="model-tag lstm">LSTM</span>
+              {lstmHistory && <span className="card-subtitle">{lstmHistory.train_loss?.length || 0} epochs</span>}
+            </div>
+          </div>
+          {lstmHistory ? (
+            <LossChart trainLoss={lstmHistory.train_loss} valLoss={lstmHistory.val_loss} />
+          ) : (
+            <div className="chart-placeholder">
+              <span>Train LSTM model to see loss curves</span>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <div className="grid-2" style={{ marginTop: 'var(--space-xl)' }}>
+        {/* MLP Architecture */}
+        <div className="card animate-in animate-in-delay-2">
+          <div className="card-header">
+            <span className="card-title">MLP Architecture</span>
             <span className="card-subtitle">
               {modelInfo ? `${modelInfo.total_parameters?.toLocaleString()} params` : 'N/A'}
             </span>
@@ -104,8 +279,39 @@ export default function Dashboard() {
             </div>
           ) : (
             <div className="chart-placeholder">
-              <span style={{ fontSize: '2rem', marginBottom: '8px' }}>🧠</span>
-              <span>No model loaded yet</span>
+              <span>No MLP model loaded yet</span>
+            </div>
+          )}
+        </div>
+
+        {/* LSTM Architecture */}
+        <div className="card animate-in animate-in-delay-3">
+          <div className="card-header">
+            <span className="card-title">LSTM Architecture</span>
+            <span className="card-subtitle">
+              {lstmModelInfo ? `${lstmModelInfo.total_parameters?.toLocaleString()} params` : 'N/A'}
+            </span>
+          </div>
+          {lstmModelInfo && !lstmModelInfo.message ? (
+            <div className="layer-list">
+              {[
+                'Input (batch, seq=10, features)',
+                'LSTM(2 layers, hidden=64, bidir)',
+                'Last step → Linear(128, 64)',
+                'BatchNorm + ReLU + Dropout(0.3)',
+                'Linear(64, 32) + ReLU',
+                'Dropout(0.15)',
+                'Linear(32, 1) + Sigmoid → Output',
+              ].map((layer, i) => (
+                <div key={i} className="layer-item">
+                  <span className="layer-dot" style={{ background: '#8b5cf6' }}></span>
+                  {layer}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="chart-placeholder">
+              <span>No LSTM model loaded yet</span>
             </div>
           )}
         </div>
@@ -114,36 +320,31 @@ export default function Dashboard() {
       {/* System Architecture */}
       <div className="card animate-in" style={{ marginTop: 'var(--space-xl)' }}>
         <div className="card-header">
-          <span className="card-title">⚡ System Architecture</span>
+          <span className="card-title">System Architecture</span>
         </div>
         <div className="architecture-flow">
           <div className="arch-node">
-            <div className="node-icon">💳</div>
             <div>Transaction</div>
           </div>
           <span className="arch-arrow">→</span>
           <div className="arch-node">
-            <div className="node-icon">⚙️</div>
             <div>Feature Engine</div>
           </div>
           <span className="arch-arrow">→</span>
           <div className="arch-node">
-            <div className="node-icon">📐</div>
             <div>Scaler</div>
           </div>
           <span className="arch-arrow">→</span>
-          <div className="arch-node">
-            <div className="node-icon">🧠</div>
-            <div>PyTorch DNN</div>
+          <div className="arch-node" style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <div style={{ fontSize: '0.7rem', color: '#3b82f6' }}>MLP DNN</div>
+            <div style={{ fontSize: '0.7rem', color: '#8b5cf6' }}>LSTM Seq</div>
           </div>
           <span className="arch-arrow">→</span>
           <div className="arch-node">
-            <div className="node-icon">📊</div>
             <div>Probability</div>
           </div>
           <span className="arch-arrow">→</span>
           <div className="arch-node">
-            <div className="node-icon">🚨</div>
             <div>Decision</div>
           </div>
         </div>

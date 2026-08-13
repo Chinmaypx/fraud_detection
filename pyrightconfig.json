@@ -1,0 +1,18 @@
+{
+  "venvPath": ".",
+  "venv": ".venv",
+  "pythonVersion": "3.13",
+  "pythonPlatform": "Windows",
+  "typeCheckingMode": "basic",
+  "include": [
+    "src",
+    "api",
+    "generate_dataset.py",
+    "streamlit_app.py",
+    "tests"
+  ],
+  "extraPaths": [
+    "src",
+    "api"
+  ]
+}

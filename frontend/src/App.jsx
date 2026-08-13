@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import Sidebar from './components/Sidebar';
 import Dashboard from './pages/Dashboard';
 import Predict from './pages/Predict';
@@ -8,6 +8,22 @@ import About from './pages/About';
 
 function App() {
   const [activePage, setActivePage] = useState('dashboard');
+
+  // Theme state — persisted in localStorage
+  const [theme, setTheme] = useState(() => {
+    const saved = localStorage.getItem('fraudshield-theme');
+    return saved || 'dark';
+  });
+
+  // Apply theme to <html> data attribute
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('fraudshield-theme', theme);
+  }, [theme]);
+
+  const toggleTheme = useCallback(() => {
+    setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'));
+  }, []);
 
   // Shared training state — lifted to App so it persists across tab switches
   const [trainingState, setTrainingState] = useState({
@@ -26,6 +42,8 @@ function App() {
         activePage={activePage}
         onNavigate={setActivePage}
         isTraining={trainingState.training}
+        theme={theme}
+        onToggleTheme={toggleTheme}
       />
       <main className="main-content">
         {/* All pages rendered but only the active one is visible.
