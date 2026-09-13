@@ -415,7 +415,7 @@ class LSTMTrainer:
             y_train if isinstance(y_train, np.ndarray) else y_train.values
         ).to(self.device)
 
-        criterion = nn.BCELoss(reduction='none')
+        criterion = nn.BCEWithLogitsLoss(reduction='none')
         optimizer = optim.Adam(
             self.model.parameters(),
             lr=learning_rate,

@@ -21,8 +21,8 @@ class FraudDataset(Dataset):
     def __len__(self):
         return len(self.y)
     
-    def __getitem__(self, idx):
-        return self.X[idx], self.y[idx]
+    def __getitem__(self, index):
+        return self.X[index], self.y[index]
 
 
 class FraudDetectorNet(nn.Module):
@@ -177,7 +177,7 @@ class FraudLSTMNet(nn.Module):
             nn.Dropout(dropout_rate * 0.5),
 
             nn.Linear(32, 1),
-            nn.Sigmoid(),
+            
         )
 
     def forward(self, x):
@@ -242,8 +242,8 @@ class SequenceFraudDataset(Dataset):
     def __len__(self):
         return len(self.labels)
 
-    def __getitem__(self, idx):
-        return self.sequences[idx], self.labels[idx]
+    def __getitem__(self, index):
+        return self.sequences[index], self.labels[index]
 
 
 def create_sequence_data_loaders(

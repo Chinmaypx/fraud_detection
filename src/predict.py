@@ -360,7 +360,8 @@ class LSTMFraudDetector:
         self.model.eval()
         with torch.no_grad():
             X_tensor = torch.FloatTensor(seq).unsqueeze(0).to(self.device)
-            fraud_probability = self.model(X_tensor).cpu().numpy()
+            logits = self.model(X_tensor)
+            fraud_probability = torch.sigmoid(logits).cpu().numpy()
 
             if fraud_probability.ndim == 0:
                 fraud_probability = float(fraud_probability)
