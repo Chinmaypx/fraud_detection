@@ -12,17 +12,19 @@ from pathlib import Path
 
 from .pytorch_model import FraudDetectorNet
 
+DEFAULT_MODEL_DIR = Path(__file__).resolve().parents[1] / 'models'
+
 
 class FraudDetector:
     """
     Main prediction class for PyTorch-based fraud detection
     """
     
-    def __init__(self, model_path='models/', device=None):
+    def __init__(self, model_path=None, device=None):
         self.device = device or torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.model = None
         self.scaler = None
-        self.model_path = model_path
+        self.model_path = model_path if model_path is not None else str(DEFAULT_MODEL_DIR)
         self.feature_names = None
         
     def load_model(self, model_name='fraud_detector.pt'):
@@ -179,15 +181,68 @@ class FraudDetector:
             return 'MEDIUM'
         else:
             return 'LOW'
-    
-    def predict_batch(self, transactions, threshold=0.5):
-        """Predict fraud for multiple transactions"""
-        results = []
-        for transaction in transactions:
-            result = self.predict(transaction, threshold)
-            results.append(result)
-        return results
 
+    def predict_batch(self, transactions, threshold=0.5):
+        """Predict fraud for multiple transactions."""
+        return [self.predict(transaction, threshold) for transaction in transactions]
+
+
+class ULBFraudDetector:
+    """Inference wrapper for the ULB MLP and its ULB-only preprocessing."""
+
+    def __init__(self, model_path=None, device=None):
+        self.device = device or torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.model_path = model_path if model_path is not None else str(DEFAULT_MODEL_DIR)
+        self.model = None
+        self.threshold = None
+        from .ulb_dataset import ULBCreditCardDataset
+        self.adapter = ULBCreditCardDataset()
+
+    @property
+    def feature_names(self):
+        return self.adapter.feature_names
+
+    def load_model(self, model_name='fraud_detector_ulb.pt'):
+        from .ulb_dataset import ULB_FEATURES
+        model_file = Path(self.model_path) / model_name
+        if not model_file.is_file():
+            raise FileNotFoundError(f"ULB model file not found: {model_file}")
+        checkpoint = torch.load(model_file, map_location=self.device, weights_only=True)
+        if checkpoint.get('input_dim') != len(ULB_FEATURES):
+            raise ValueError('ULB checkpoint has an incompatible feature count.')
+        threshold = checkpoint.get('threshold')
+        if threshold is None or not np.isfinite(float(threshold)) or not 0 <= float(threshold) <= 1:
+            raise ValueError('ULB checkpoint has no valid decision threshold.')
+        self.model = FraudDetectorNet(len(ULB_FEATURES)).to(self.device)
+        self.model.load_state_dict(checkpoint['model_state_dict'])
+        self.model.eval()
+        self.threshold = float(threshold)
+        return self.model
+
+    def load_preprocessing(self):
+        return self.adapter.load_preprocessing(self.model_path)
+
+    def predict(self, transaction_data):
+        if self.model is None or self.threshold is None:
+            raise ValueError('ULB model not loaded.')
+        frame = pd.DataFrame([transaction_data]) if isinstance(transaction_data, dict) else transaction_data.copy()
+        scaled = self.adapter.transform(frame)
+        tensor = torch.as_tensor(
+            np.array(scaled.to_numpy(dtype=np.float32), copy=True), device=self.device
+        )
+        self.model.eval()
+        with torch.no_grad():
+            # FraudDetectorNet includes sigmoid, so its output is already a probability.
+            probability = float(self.model(tensor).reshape(-1)[0].item())
+        if not np.isfinite(probability) or not 0.0 <= probability <= 1.0:
+            raise ValueError('ULB model returned an invalid fraud probability.')
+        return {
+            'is_fraud': probability >= self.threshold,
+            'predicted_class': int(probability >= self.threshold),
+            'fraud_probability': probability,
+            'threshold': self.threshold,
+            'risk_level': 'HIGH' if probability >= self.threshold else 'LOW',
+        }
 
 def create_sample_transaction():
     """Create a sample transaction for testing"""
@@ -231,11 +286,11 @@ class LSTMFraudDetector:
     length `seq_length` with the transaction as the last time step.
     """
 
-    def __init__(self, model_path='models/', device=None):
+    def __init__(self, model_path=None, device=None):
         self.device = device or torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.model = None
         self.scaler = None
-        self.model_path = model_path
+        self.model_path = model_path if model_path is not None else str(DEFAULT_MODEL_DIR)
         self.feature_names = None
         self.seq_length = 10  # default, overridden on load
 

@@ -52,7 +52,11 @@ export default function Training({ trainingState, onTrainingUpdate }) {
     <div>
       <div className="page-header">
         <h2>Model Training</h2>
-        <p>Train deep learning models on synthetic fraud data</p>
+        <p>Train the synthetic fraud models. The ULB real-world model is available separately for prediction and benchmark review.</p>
+      </div>
+
+      <div className="benchmark-note card" style={{ marginBottom: 'var(--space-lg)' }}>
+        These training controls target the synthetic dataset only; they do not train or replace the ULB model.
       </div>
 
       {/* Model Selector */}

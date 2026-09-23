@@ -5,7 +5,9 @@ Saves to data/transactions.csv
 
 import pandas as pd
 import numpy as np
-import os
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parent
 
 def generate_dataset(n_samples=100000, fraud_rate=0.02, seed=42):
     """
@@ -122,8 +124,8 @@ if __name__ == '__main__':
     print("Generating synthetic fraud detection dataset...")
     df = generate_dataset(n_samples=100000, fraud_rate=0.02)
 
-    os.makedirs('data', exist_ok=True)
-    output_path = 'data/transactions.csv'
+    output_path = PROJECT_ROOT / 'data' / 'transactions.csv'
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(output_path, index=False)
 
     print(f"\n✅ Dataset saved to: {output_path}")

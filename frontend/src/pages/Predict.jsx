@@ -1,11 +1,13 @@
 import { useState } from 'react';
-import { predictFraud, predictFraudLSTM } from '../api';
+import { predictFraud, predictFraudLSTM, predictFraudULB } from '../api';
+
+const ULB_FIELDS = ['Time', ...Array.from({ length: 28 }, (_, index) => `V${index + 1}`), 'Amount'];
 
 /**
  * Generate a human-readable analysis summary based on the transaction inputs
  * and the prediction result.
  */
-function generateAnalysisSummary(form, result) {
+function generateAnalysisSummary(form) {
   const factors = [];
   const positiveFactors = [];
 
@@ -177,32 +179,43 @@ export default function Predict() {
 
   const hourOfDay = Math.floor(form.transaction_time / 3600);
 
-  const analysis = result && analysisForm ? generateAnalysisSummary(analysisForm, result) : null;
+  const analysis = result && analysisForm ? generateAnalysisSummary(analysisForm) : null;
+
+  if (selectedModel === 'ulb') {
+    return <ULBPredictionPanel selectedModel={selectedModel} onSelectModel={setSelectedModel} />;
+  }
 
   return (
     <div>
       <div className="page-header">
         <h2>Fraud Prediction</h2>
-        <p>Analyze a transaction for fraud risk using deep learning models</p>
+        <p>Choose the synthetic transaction model or the separate ULB real-world credit-card model</p>
       </div>
 
       {/* Model Selector */}
       <div className="model-selector">
-        <span className="model-selector-label">Model</span>
+        <span className="model-selector-label">Dataset / Model</span>
         <div className="model-selector-pills">
           <button
             className={`model-pill ${selectedModel === 'mlp' ? 'active' : ''}`}
             onClick={() => setSelectedModel('mlp')}
           >
-            MLP
-            <span className="model-pill-badge">6-Layer DNN</span>
+            Synthetic Fraud Model
+            <span className="model-pill-badge">MLP</span>
           </button>
           <button
             className={`model-pill ${selectedModel === 'lstm' ? 'active' : ''}`}
             onClick={() => setSelectedModel('lstm')}
           >
-            LSTM
-            <span className="model-pill-badge">Sequence</span>
+            Synthetic Fraud Model
+            <span className="model-pill-badge">LSTM</span>
+          </button>
+          <button
+            className={`model-pill ${selectedModel === 'ulb' ? 'active' : ''}`}
+            onClick={() => setSelectedModel('ulb')}
+          >
+            Real-World ULB Model
+            <span className="model-pill-badge">Credit Card</span>
           </button>
         </div>
       </div>
@@ -581,6 +594,117 @@ export default function Predict() {
           >
             Night Transaction
           </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ULBPredictionPanel({ selectedModel, onSelectModel }) {
+  const [form, setForm] = useState(() => Object.fromEntries(ULB_FIELDS.map((field) => [field, 0])));
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  const submit = async (event) => {
+    event.preventDefault();
+    setLoading(true);
+    setError(null);
+    setResult(null);
+    try {
+      setResult(await predictFraudULB(form));
+    } catch (requestError) {
+      setError(requestError.message || 'ULB prediction failed. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const riskClass = result?.risk_level === 'HIGH' ? 'danger'
+    : result?.risk_level === 'MEDIUM' ? 'warning' : 'safe';
+
+  return (
+    <div>
+      <div className="page-header">
+        <h2>Fraud Prediction</h2>
+        <p>Real-World ULB Credit Card Fraud Model · 30 benchmark features</p>
+      </div>
+      <div className="model-selector">
+        <span className="model-selector-label">Dataset / Model</span>
+        <div className="model-selector-pills">
+          <button className={`model-pill ${selectedModel !== 'ulb' ? 'active' : ''}`} onClick={() => onSelectModel('mlp')}>
+            Synthetic Fraud Model <span className="model-pill-badge">MLP / LSTM</span>
+          </button>
+          <button className="model-pill active" aria-pressed="true">
+            Real-World ULB Model <span className="model-pill-badge">MLP</span>
+          </button>
+        </div>
+      </div>
+      <div className="benchmark-note card">
+        ULB Time is the benchmark’s elapsed-time feature. V1–V28 are anonymized PCA features; their
+        meanings are not individually interpretable. Enter the feature values as provided.
+      </div>
+      <div className="grid-2">
+        <form className="card animate-in" onSubmit={submit}>
+          <div className="card-header">
+            <span className="card-title">ULB Transaction Features</span>
+            <span className="model-tag mlp">30 inputs</span>
+          </div>
+          <div className="ulb-feature-grid">
+            {ULB_FIELDS.map((field) => (
+              <div className="form-group" key={field}>
+                <label className="form-label" htmlFor={`ulb-${field}`}>
+                  {field}{field.startsWith('V') ? ' · anonymized PCA feature' : ''}
+                </label>
+                <input
+                  id={`ulb-${field}`}
+                  name={field}
+                  className="form-input"
+                  type="number"
+                  step="any"
+                  min={field === 'Time' || field === 'Amount' ? '0' : undefined}
+                  required
+                  value={form[field]}
+                  onChange={(event) => setForm((previous) => ({
+                    ...previous,
+                    [field]: event.target.value === '' ? '' : Number(event.target.value),
+                  }))}
+                />
+              </div>
+            ))}
+          </div>
+          {error && <div className="prediction-result danger" role="alert"><div className="result-label">Prediction error</div><p>{error}</p></div>}
+          <button className="btn btn-primary btn-lg" type="submit" disabled={loading} style={{ width: '100%', marginTop: 'var(--space-lg)' }}>
+            {loading ? 'Analyzing ULB transaction…' : 'Analyze with ULB Model'}
+          </button>
+        </form>
+
+        <div className="card animate-in animate-in-delay-1" aria-live="polite">
+          <div className="card-header">
+            <span className="card-title">ULB Prediction Result</span>
+            <span className="model-tag mlp">Real-World ULB</span>
+          </div>
+          {result ? (
+            <div className={`prediction-result ${riskClass}`}>
+              <div className="result-label">{result.is_fraud ? 'FRAUD DETECTED' : 'LEGITIMATE'}</div>
+              <div className="result-probability" style={{ color: result.is_fraud ? 'var(--danger)' : 'var(--success)' }}>
+                {(result.fraud_probability * 100).toFixed(2)}%
+              </div>
+              <span className={`risk-badge ${String(result.risk_level).toLowerCase()}`}>{result.risk_level} RISK</span>
+              <dl className="benchmark-metrics ulb-prediction-details">
+                <div><dt>Fraud probability</dt><dd>{Number(result.fraud_probability).toFixed(6)}</dd></div>
+                <div><dt>Predicted class</dt><dd>{result.predicted_class} · {result.predicted_class === 1 ? 'Fraud' : 'Legitimate'}</dd></div>
+                <div><dt>Risk level</dt><dd>{result.risk_level}</dd></div>
+                <div><dt>Decision threshold</dt><dd>{Number(result.threshold).toFixed(6)}</dd></div>
+                <div><dt>Model name</dt><dd>{result.model_name}</dd></div>
+              </dl>
+              <p>{result.message}</p>
+            </div>
+          ) : error ? (
+            <div className="empty-state"><p>The API could not complete this prediction.</p></div>
+          ) : (
+            <div className="empty-state"><p>Enter the ULB feature values and submit to see the result.</p></div>
+          )}
         </div>
       </div>
     </div>

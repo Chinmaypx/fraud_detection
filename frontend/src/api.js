@@ -1,85 +1,85 @@
 const API_BASE = 'http://localhost:8000';
 
+async function requestJson(path, options = {}) {
+  let response;
+  try {
+    response = await fetch(`${API_BASE}${path}`, options);
+  } catch {
+    throw new Error('Could not reach the fraud detection API. Check that the backend is running.');
+  }
+  let data;
+  try {
+    data = await response.json();
+  } catch {
+    data = null;
+  }
+  if (!response.ok) {
+    throw new Error(data?.detail || data?.message || `API request failed (${response.status})`);
+  }
+  return data;
+}
+
+function postJson(path, payload) {
+  return requestJson(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+}
+
 export async function checkHealth() {
-  const res = await fetch(`${API_BASE}/health`);
-  return res.json();
+  return requestJson('/health');
 }
 
 export async function getModelInfo() {
-  const res = await fetch(`${API_BASE}/model-info`);
-  return res.json();
+  return requestJson('/model-info');
+}
+
+export async function getULBModelInfo() {
+  return requestJson('/model-info-ulb');
 }
 
 export async function getLSTMModelInfo() {
-  const res = await fetch(`${API_BASE}/model-info-lstm`);
-  return res.json();
+  return requestJson('/model-info-lstm');
 }
 
 export async function getTrainingHistory() {
-  const res = await fetch(`${API_BASE}/training-history`);
-  return res.json();
+  return requestJson('/training-history');
 }
 
 export async function getLSTMTrainingHistory() {
-  const res = await fetch(`${API_BASE}/training-history-lstm`);
-  return res.json();
+  return requestJson('/training-history-lstm');
 }
 
 export async function getMetrics() {
-  const res = await fetch(`${API_BASE}/metrics`);
-  return res.json();
+  return requestJson('/metrics');
 }
 
 export async function getLSTMMetrics() {
-  const res = await fetch(`${API_BASE}/metrics-lstm`);
-  return res.json();
+  return requestJson('/metrics-lstm');
 }
 
 export async function predictFraud(transaction) {
-  const res = await fetch(`${API_BASE}/predict`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(transaction),
-  });
-  if (!res.ok) {
-    const error = await res.json();
-    throw new Error(error.detail || 'Prediction failed');
-  }
-  return res.json();
+  return postJson('/predict', transaction);
+}
+
+export async function predictFraudULB(transaction) {
+  return postJson('/predict-ulb', transaction);
+}
+
+export async function predictFraudBatchULB(transactions) {
+  return postJson('/batch-predict-ulb', { transactions });
 }
 
 export async function predictFraudLSTM(transaction) {
-  const res = await fetch(`${API_BASE}/predict-lstm`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(transaction),
-  });
-  if (!res.ok) {
-    const error = await res.json();
-    throw new Error(error.detail || 'LSTM Prediction failed');
-  }
-  return res.json();
+  return postJson('/predict-lstm', transaction);
 }
 
 export async function trainModel() {
-  const res = await fetch(`${API_BASE}/train`, {
-    method: 'POST',
-  });
-  if (!res.ok) {
-    const error = await res.json();
-    throw new Error(error.detail || 'Training failed');
-  }
-  return res.json();
+  return requestJson('/train', { method: 'POST' });
 }
 
 export async function trainLSTMModel() {
-  const res = await fetch(`${API_BASE}/train-lstm`, {
-    method: 'POST',
-  });
-  if (!res.ok) {
-    const error = await res.json();
-    throw new Error(error.detail || 'LSTM Training failed');
-  }
-  return res.json();
+  return requestJson('/train-lstm', { method: 'POST' });
 }
 

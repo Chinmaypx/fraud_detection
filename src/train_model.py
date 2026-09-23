@@ -8,9 +8,10 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 import numpy as np
-import os
 import json
 import pickle
+from pathlib import Path
+from copy import deepcopy
 from datetime import datetime
 from sklearn.model_selection import train_test_split
 
@@ -19,6 +20,14 @@ from .pytorch_model import (
     FraudLSTMNet,
     get_class_weights, create_data_loaders
 )
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+MODEL_DIR = PROJECT_ROOT / 'models'
+
+
+def snapshot_state_dict(model):
+    """Copy model tensors so later optimizer steps cannot mutate the snapshot."""
+    return deepcopy(model.state_dict())
 
 
 def split_train_validation(X, y, validation_size=0.25, random_state=42):
@@ -120,6 +129,7 @@ class PyTorchTrainer:
         print("\n" + "=" * 60)
         print("TRAINING PYTORCH FRAUD DETECTOR")
         print("=" * 60)
+        print("Train/validation F1 and early stopping use a fixed probability threshold >= 0.50.")
         print(f"Epochs: {epochs}")
         print(f"Learning Rate: {learning_rate}")
         print(f"Device: {self.device}")
@@ -223,26 +233,33 @@ class PyTorchTrainer:
             if val_f1 > best_val_f1:
                 best_val_f1 = val_f1
                 self.best_val_f1 = val_f1
-                self.best_model_state = self.model.state_dict().copy()
+                self.best_model_state = snapshot_state_dict(self.model)
                 patience_counter = 0
             else:
                 patience_counter += 1
                 
             if patience_counter >= patience:
-                print(f"\nEarly stopping at epoch {epoch+1}. Best Val F1: {best_val_f1:.4f}")
+                print(
+                    f"\nEarly stopping at epoch {epoch+1}. Best Val F1 at fixed "
+                    f"probability threshold >= 0.50: {best_val_f1:.4f}"
+                )
                 break
         
         # Restore best model
         if self.best_model_state:
             self.model.load_state_dict(self.best_model_state)
         
-        print(f"\nTraining complete! Best Val F1: {best_val_f1:.4f}")
+        print(
+            f"\nTraining complete! Best Val F1 at fixed probability threshold "
+            f">= 0.50: {best_val_f1:.4f}"
+        )
         return self.training_history
     
 
     
-    def load_model(self, filepath='models/fraud_detector.pt'):
+    def load_model(self, filepath=None):
         """Load a trained model"""
+        filepath = Path(filepath) if filepath is not None else MODEL_DIR / 'fraud_detector.pt'
         checkpoint = torch.load(filepath, map_location=self.device, weights_only=True)
         self.input_dim = checkpoint['input_dim']
         self.model = FraudDetectorNet(self.input_dim).to(self.device)
@@ -251,20 +268,21 @@ class PyTorchTrainer:
         print(f"Model loaded from {filepath}")
         return self.model
 
-    def save_model(self, filepath='models/'):
+    def save_model(self, filepath=None):
         """Save trained model and training history"""
-        os.makedirs(filepath, exist_ok=True)
+        filepath = Path(filepath) if filepath is not None else MODEL_DIR
+        filepath.mkdir(parents=True, exist_ok=True)
         # Ensure model is built before saving
         if self.model is None:
             raise RuntimeError("Cannot save model because it has not been built. Call build_model() before save_model().")
-        model_path = os.path.join(filepath, 'fraud_detector.pt')
+        model_path = filepath / 'fraud_detector.pt'
         torch.save({
             'model_state_dict': self.model.state_dict(),
             'input_dim': self.input_dim,
             'architecture': 'FraudDetectorNet',
         }, model_path)
         print(f"Model saved to {model_path}")
-        history_path = os.path.join(filepath, 'training_history.json')
+        history_path = filepath / 'training_history.json'
         with open(history_path, 'w') as f:
             json.dump(self.training_history, f, indent=2)
         print(f"Training history saved to {history_path}")
@@ -307,12 +325,13 @@ def main():
     X_test_scaled = preprocessor.transform(X_test)
     
     # Save scaler
-    os.makedirs('models', exist_ok=True)
-    pickle.dump(preprocessor.scaler, open('models/scaler_mlp.pkl', 'wb'))
+    MODEL_DIR.mkdir(parents=True, exist_ok=True)
+    with (MODEL_DIR / 'scaler_mlp.pkl').open('wb') as scaler_file:
+        pickle.dump(preprocessor.scaler, scaler_file)
     
     # Save feature names
     feature_names = list(X_train.columns)
-    with open('models/feature_names.json', 'w') as f:
+    with (MODEL_DIR / 'feature_names.json').open('w', encoding='utf-8') as f:
         json.dump(feature_names, f)
     
     # Step 3: Create data loaders
@@ -332,7 +351,7 @@ def main():
     )
     
     # Step 5: Save model
-    trainer.save_model('models/')
+    trainer.save_model(MODEL_DIR)
     
     # Step 6: Final evaluation
     predictions, probabilities = trainer.predict(X_test_scaled)
@@ -343,8 +362,8 @@ def main():
     
     # Save evaluation metrics
     metrics = evaluator.calculate_metrics()
-    metrics_path = 'models/eval_metrics.json'
-    with open(metrics_path, 'w') as f:
+    metrics_path = MODEL_DIR / 'eval_metrics.json'
+    with metrics_path.open('w', encoding='utf-8') as f:
         json.dump({k: float(v) for k, v in metrics.items()}, f, indent=2)
     print(f"\nEvaluation metrics saved to {metrics_path}")
     
@@ -559,14 +578,15 @@ class LSTMTrainer:
         print(f"\nTraining complete! Best Val F1: {best_val_f1:.4f}")
         return self.training_history
 
-    def save_model(self, filepath='models/'):
+    def save_model(self, filepath=None):
         """Save trained LSTM model and training history"""
-        os.makedirs(filepath, exist_ok=True)
+        filepath = Path(filepath) if filepath is not None else MODEL_DIR
+        filepath.mkdir(parents=True, exist_ok=True)
         # Ensure the LSTM model has been built before saving
         if self.model is None:
             raise RuntimeError("Cannot save LSTM model because it has not been built. Call build_model() before save_model().")
 
-        model_path = os.path.join(filepath, 'fraud_detector_lstm.pt')
+        model_path = filepath / 'fraud_detector_lstm.pt'
         torch.save({
             'model_state_dict': self.model.state_dict(),
             'input_dim': self.input_dim,
@@ -575,7 +595,7 @@ class LSTMTrainer:
         }, model_path)
         print(f"LSTM model saved to {model_path}")
 
-        history_path = os.path.join(filepath, 'training_history_lstm.json')
+        history_path = filepath / 'training_history_lstm.json'
         with open(history_path, 'w') as f:
             json.dump(self.training_history, f, indent=2)
         print(f"LSTM training history saved to {history_path}")

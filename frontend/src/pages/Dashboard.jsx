@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { getMetrics, getLSTMMetrics, getTrainingHistory, getLSTMTrainingHistory, getModelInfo, getLSTMModelInfo } from '../api';
+import { getMetrics, getLSTMMetrics, getTrainingHistory, getLSTMTrainingHistory, getModelInfo, getLSTMModelInfo, getULBModelInfo } from '../api';
+import BenchmarkRecords, { ULBMetricDetails } from '../components/BenchmarkRecords';
 
 export default function Dashboard() {
   const [metrics, setMetrics] = useState(null);
@@ -8,6 +9,7 @@ export default function Dashboard() {
   const [lstmHistory, setLstmHistory] = useState(null);
   const [modelInfo, setModelInfo] = useState(null);
   const [lstmModelInfo, setLstmModelInfo] = useState(null);
+  const [ulbModelInfo, setUlbModelInfo] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -18,13 +20,15 @@ export default function Dashboard() {
       getLSTMTrainingHistory().catch(() => null),
       getModelInfo().catch(() => null),
       getLSTMModelInfo().catch(() => null),
-    ]).then(([m, lm, h, lh, mi, lmi]) => {
+      getULBModelInfo().catch(() => null),
+    ]).then(([m, lm, h, lh, mi, lmi, umi]) => {
       setMetrics(m?.message ? null : m);
       setLstmMetrics(lm?.message ? null : lm);
       setHistory(h?.message ? null : h);
       setLstmHistory(lh?.message ? null : lh);
       setModelInfo(mi?.message ? null : mi);
       setLstmModelInfo(lmi?.message ? null : lmi);
+      setUlbModelInfo(umi?.message ? null : umi);
       setLoading(false);
     });
   }, []);
@@ -63,7 +67,7 @@ export default function Dashboard() {
     <div>
       <div className="page-header">
         <h2>Dashboard</h2>
-        <p>Comparative overview of MLP & LSTM fraud detection models</p>
+        <p>Separate views of the synthetic models and the ULB real-world benchmark</p>
       </div>
 
       {/* Accuracy Score Hero Cards */}
@@ -75,7 +79,7 @@ export default function Dashboard() {
             background: 'linear-gradient(90deg, #3b82f6, #60a5fa)',
           }}></div>
           <div className="card-header">
-            <span className="card-title">MLP Accuracy</span>
+            <span className="card-title">Synthetic MLP Accuracy</span>
             <span className="model-tag mlp">MLP</span>
           </div>
           <div style={{ textAlign: 'center', padding: 'var(--space-lg) 0' }}>
@@ -118,7 +122,7 @@ export default function Dashboard() {
             background: 'linear-gradient(90deg, #8b5cf6, #a78bfa)',
           }}></div>
           <div className="card-header">
-            <span className="card-title">LSTM Accuracy</span>
+            <span className="card-title">Synthetic LSTM Accuracy</span>
             <span className="model-tag lstm">LSTM</span>
           </div>
           <div style={{ textAlign: 'center', padding: 'var(--space-lg) 0' }}>
@@ -155,35 +159,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Accuracy Comparison Delta */}
-      {mlpAccuracy != null && lstmAccuracy != null && (
-        <div className="card animate-in animate-in-delay-2" style={{ marginBottom: 'var(--space-xl)', textAlign: 'center', padding: 'var(--space-md) var(--space-lg)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 'var(--space-lg)', flexWrap: 'wrap' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span className="model-tag mlp" style={{ fontSize: '0.65rem' }}>MLP</span>
-              <span style={{ fontSize: '1.1rem', fontWeight: 700, color: '#3b82f6' }}>{(mlpAccuracy * 100).toFixed(2)}%</span>
-            </div>
-            <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>vs</div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span className="model-tag lstm" style={{ fontSize: '0.65rem' }}>LSTM</span>
-              <span style={{ fontSize: '1.1rem', fontWeight: 700, color: '#8b5cf6' }}>{(lstmAccuracy * 100).toFixed(2)}%</span>
-            </div>
-            <div style={{
-              padding: '4px 14px', borderRadius: '99px', fontSize: '0.75rem', fontWeight: 600,
-              background: mlpAccuracy > lstmAccuracy ? 'rgba(59, 130, 246, 0.12)' : mlpAccuracy < lstmAccuracy ? 'rgba(139, 92, 246, 0.12)' : 'rgba(100,100,100,0.12)',
-              color: mlpAccuracy > lstmAccuracy ? '#3b82f6' : mlpAccuracy < lstmAccuracy ? '#8b5cf6' : 'var(--text-muted)',
-            }}>
-              {mlpAccuracy > lstmAccuracy
-                ? `MLP leads by ${((mlpAccuracy - lstmAccuracy) * 100).toFixed(3)}pp`
-                : mlpAccuracy < lstmAccuracy
-                ? `LSTM leads by ${((lstmAccuracy - mlpAccuracy) * 100).toFixed(3)}pp`
-                : 'Tied'}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Model Comparison Cards */}
+      {/* Synthetic MLP/LSTM metrics remain separate from the ULB benchmarks below. */}
       <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
         {comparisonCards.map((stat, i) => (
           <div key={stat.label} className={`stat-card animate-in animate-in-delay-${Math.min(i + 1, 4)}`}>
@@ -198,20 +174,27 @@ export default function Dashboard() {
                 <span className="stat-value" style={{ fontSize: '1.3rem', color: stat.lstmRaw != null ? '#8b5cf6' : 'var(--text-muted)' }}>{stat.lstm}</span>
               </div>
             </div>
-            {stat.mlpRaw != null && stat.lstmRaw != null && (
-              <div className="model-comparison-delta">
-                {stat.mlpRaw > stat.lstmRaw ? (
-                  <span style={{ color: '#3b82f6', fontSize: '0.7rem' }}>MLP +{((stat.mlpRaw - stat.lstmRaw) * 100).toFixed(2)}pp</span>
-                ) : stat.lstmRaw > stat.mlpRaw ? (
-                  <span style={{ color: '#8b5cf6', fontSize: '0.7rem' }}>LSTM +{((stat.lstmRaw - stat.mlpRaw) * 100).toFixed(2)}pp</span>
-                ) : (
-                  <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>Tied</span>
-                )}
-              </div>
-            )}
             <div className="stat-delta">{stat.delta}</div>
           </div>
         ))}
+      </div>
+
+      <div style={{ marginTop: 'var(--space-xl)' }}>
+        <BenchmarkRecords syntheticMetrics={metrics} syntheticFeatures={modelInfo?.features_used} />
+      </div>
+      <div style={{ marginTop: 'var(--space-xl)' }}>
+        <ULBMetricDetails />
+      </div>
+      <div className="card" style={{ marginTop: 'var(--space-xl)' }}>
+        <div className="card-header">
+          <span className="card-title">ULB Model Status</span>
+          <span className={`model-tag ${ulbModelInfo ? 'mlp' : ''}`}>{ulbModelInfo ? 'Loaded' : 'Unavailable'}</span>
+        </div>
+        <p className="benchmark-note">
+          {ulbModelInfo
+            ? `${ulbModelInfo.model_name} · ${ulbModelInfo.dataset} · ${ulbModelInfo.feature_count} features · threshold ${Number(ulbModelInfo.threshold).toFixed(6)}`
+            : 'The API did not report a loaded ULB model.'}
+        </p>
       </div>
 
       <div className="grid-2">

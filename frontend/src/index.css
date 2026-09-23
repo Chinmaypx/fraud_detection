@@ -1654,3 +1654,90 @@ input[type="range"]::-webkit-slider-thumb:hover {
   margin-top: var(--space-xs);
 }
 
+.benchmark-note {
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
+
+.benchmark-split-card {
+  padding: var(--space-md);
+  background: var(--bg-secondary);
+  box-shadow: none;
+}
+
+.benchmark-split-card h3 {
+  margin: 0 0 var(--space-sm);
+  font-size: 0.9rem;
+}
+
+.benchmark-metrics {
+  display: grid;
+  gap: 0.55rem;
+  margin: var(--space-md) 0;
+}
+
+.benchmark-metrics > div {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--space-md);
+}
+
+.benchmark-metrics dt {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.benchmark-metrics dd {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  font-weight: 650;
+  text-align: right;
+}
+
+.benchmark-confusion {
+  display: grid;
+  gap: 0.25rem;
+  border-top: 1px solid var(--border-subtle);
+  padding-top: var(--space-sm);
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+}
+
+.benchmark-table-wrap {
+  overflow-x: auto;
+}
+
+.benchmark-table {
+  min-width: 900px;
+}
+
+.benchmark-features {
+  min-width: 240px;
+  max-width: 380px;
+  white-space: normal;
+  line-height: 1.5;
+}
+
+.ulb-feature-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--space-sm) var(--space-md);
+}
+
+.ulb-feature-grid .form-group {
+  margin-bottom: 0;
+}
+
+.ulb-feature-grid .form-label {
+  font-size: 0.72rem;
+}
+
+.ulb-prediction-details {
+  border-top: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--border-subtle);
+  padding: var(--space-md) 0;
+}
+

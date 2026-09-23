@@ -5,7 +5,8 @@ pandas>=1.5.0
 numpy>=1.23.0
 
 # Machine learning (sklearn for preprocessing/metrics)
-scikit-learn>=1.2.0
+# Serialized RobustScaler artifacts in this workspace were created with 1.5.2.
+scikit-learn>=1.5.2,<1.6
 
 # Deep learning
 torch>=2.0.0
@@ -20,6 +21,7 @@ joblib>=1.2.0
 fastapi>=0.95.0
 uvicorn>=0.21.0
 pydantic>=2.0.0
+streamlit>=1.28.0
 
 # Visualization
 matplotlib>=3.6.0

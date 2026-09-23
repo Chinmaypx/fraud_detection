@@ -19,7 +19,8 @@ class TestFraudDetectorInit:
         
         assert detector.model is None
         assert detector.scaler is None
-        assert detector.model_path == 'models/'
+        from pathlib import Path
+        assert Path(detector.model_path) == Path(__file__).resolve().parents[1] / 'models'
         assert detector.feature_names is None
 
     def test_init_custom_path(self):

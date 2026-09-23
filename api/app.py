@@ -3,21 +3,24 @@ FastAPI Application for Fraud Detection (PyTorch)
 REST API with CORS for React frontend integration
 """
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional, List
-import numpy as np
 import json
 import pickle
-import torch
+import logging
 from pathlib import Path
 import sys
-import os
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+MODELS_DIR = PROJECT_ROOT / "models"
+sys.path.insert(0, str(PROJECT_ROOT))
+logger = logging.getLogger(__name__)
 
-from src.predict import FraudDetector, LSTMFraudDetector
+from src.predict import FraudDetector, LSTMFraudDetector, ULBFraudDetector
 
 app = FastAPI(
     title="Fraud Detection API (PyTorch)",
@@ -28,24 +31,34 @@ app = FastAPI(
 # CORS middleware for React frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 
+@app.exception_handler(RequestValidationError)
+async def validation_error_handler(_request: Request, exc: RequestValidationError):
+    """Keep 422 details actionable without echoing submitted values or huge bodies."""
+    errors = [
+        {key: error[key] for key in ('loc', 'msg', 'type') if key in error}
+        for error in exc.errors()
+    ]
+    return JSONResponse(status_code=422, content={"detail": errors})
+
+
 # --- Pydantic Models ---
 
 class Transaction(BaseModel):
-    transaction_amount: float = Field(..., gt=0, description="Transaction amount in INR")
+    transaction_amount: float = Field(..., gt=0, allow_inf_nan=False, description="Transaction amount in INR")
     transaction_time: int = Field(..., ge=0, le=86399, description="Seconds since midnight")
-    location: str = Field(..., description="City code")
-    device_id: str = Field(..., description="Device identifier")
-    merchant_category: str = Field(..., description="Category: retail, grocery, restaurant, gas, online")
+    location: str = Field(..., max_length=100, description="City code")
+    device_id: str = Field(..., max_length=256, description="Device identifier")
+    merchant_category: str = Field(..., max_length=100, description="Category: retail, grocery, restaurant, gas, online")
     account_age_days: int = Field(..., ge=0, description="Age of account in days")
     transaction_count_24h: int = Field(..., ge=0, description="Transactions in last 24 hours")
-    avg_transaction_amount: float = Field(..., gt=0, description="Average transaction amount")
+    avg_transaction_amount: float = Field(..., gt=0, allow_inf_nan=False, description="Average transaction amount")
 
 
 class PredictionResponse(BaseModel):
@@ -56,8 +69,8 @@ class PredictionResponse(BaseModel):
 
 
 class BatchPredictionRequest(BaseModel):
-    transactions: List[Transaction]
-    threshold: Optional[float] = Field(0.5, ge=0.0, le=1.0)
+    transactions: List[Transaction] = Field(..., min_length=1, max_length=1000)
+    threshold: Optional[float] = Field(0.5, ge=0.0, le=1.0, allow_inf_nan=False)
 
 
 class BatchPredictionResponse(BaseModel):
@@ -66,72 +79,162 @@ class BatchPredictionResponse(BaseModel):
     flagged_count: int
 
 
+class ULBTransaction(BaseModel):
+    """One ULB transaction: Time, anonymized PCA features, and Amount."""
+    model_config = ConfigDict(extra='forbid')
+    Time: float = Field(..., ge=0, allow_inf_nan=False)
+    V1: float = Field(..., allow_inf_nan=False)
+    V2: float = Field(..., allow_inf_nan=False)
+    V3: float = Field(..., allow_inf_nan=False)
+    V4: float = Field(..., allow_inf_nan=False)
+    V5: float = Field(..., allow_inf_nan=False)
+    V6: float = Field(..., allow_inf_nan=False)
+    V7: float = Field(..., allow_inf_nan=False)
+    V8: float = Field(..., allow_inf_nan=False)
+    V9: float = Field(..., allow_inf_nan=False)
+    V10: float = Field(..., allow_inf_nan=False)
+    V11: float = Field(..., allow_inf_nan=False)
+    V12: float = Field(..., allow_inf_nan=False)
+    V13: float = Field(..., allow_inf_nan=False)
+    V14: float = Field(..., allow_inf_nan=False)
+    V15: float = Field(..., allow_inf_nan=False)
+    V16: float = Field(..., allow_inf_nan=False)
+    V17: float = Field(..., allow_inf_nan=False)
+    V18: float = Field(..., allow_inf_nan=False)
+    V19: float = Field(..., allow_inf_nan=False)
+    V20: float = Field(..., allow_inf_nan=False)
+    V21: float = Field(..., allow_inf_nan=False)
+    V22: float = Field(..., allow_inf_nan=False)
+    V23: float = Field(..., allow_inf_nan=False)
+    V24: float = Field(..., allow_inf_nan=False)
+    V25: float = Field(..., allow_inf_nan=False)
+    V26: float = Field(..., allow_inf_nan=False)
+    V27: float = Field(..., allow_inf_nan=False)
+    V28: float = Field(..., allow_inf_nan=False)
+    Amount: float = Field(..., ge=0, allow_inf_nan=False)
+
+
+class ULBPredictionResponse(BaseModel):
+    model_name: str
+    is_fraud: bool
+    predicted_class: int
+    fraud_probability: float
+    threshold: float
+    risk_level: str
+    message: str
+
+
+class ULBBatchPredictionRequest(BaseModel):
+    transactions: List[ULBTransaction] = Field(..., min_length=1, max_length=1000)
+
+
+class ULBBatchPredictionResponse(BaseModel):
+    predictions: List[ULBPredictionResponse]
+    total_transactions: int
+    flagged_count: int
+
+
 # --- Global state ---
 detector = None
 lstm_detector = None
+ulb_detector = None
 training_history = None
 training_history_lstm = None
 eval_metrics = None
 eval_metrics_lstm = None
 
 
+def _validate_loaded_preprocessing(detector, model_input_dim):
+    """Refuse to serve a synthetic checkpoint with missing/mismatched preprocessing."""
+    if detector.scaler is None:
+        raise RuntimeError("Model-specific preprocessing scaler is unavailable.")
+    if not detector.feature_names:
+        raise RuntimeError("Model feature metadata is unavailable.")
+    scaler_features = getattr(detector.scaler, 'n_features_in_', None)
+    feature_count = len(detector.feature_names)
+    if feature_count != model_input_dim or (
+        scaler_features is not None and scaler_features != model_input_dim
+    ):
+        raise RuntimeError("Model, scaler, and feature metadata dimensions do not match.")
+
+
 @app.on_event("startup")
 async def load_model():
     """Load PyTorch models (MLP + LSTM) and scaler on startup"""
-    global detector, lstm_detector, training_history, training_history_lstm, eval_metrics, eval_metrics_lstm
+    global detector, lstm_detector, ulb_detector, training_history, training_history_lstm, eval_metrics, eval_metrics_lstm
     
     # --- MLP Model ---
-    detector = FraudDetector()
+    detector = FraudDetector(model_path=MODELS_DIR)
     
-    model_path = Path("models/fraud_detector.pt")
+    model_path = MODELS_DIR / "fraud_detector.pt"
     if model_path.exists():
         try:
             detector.load_model()
             detector.load_scaler()
             detector.load_feature_names()
+            _validate_loaded_preprocessing(
+                detector, detector.model.network[0].in_features
+            )
             print("PyTorch MLP model loaded successfully")
         except Exception as e:
-            print(f"Warning: Error loading MLP model: {e}")
+            logger.exception("Unable to load synthetic MLP artifacts")
             detector.model = None
     else:
         print("Warning: No trained MLP model found. Train first via /train endpoint or CLI.")
     
     # --- LSTM Model ---
-    lstm_detector = LSTMFraudDetector()
+    lstm_detector = LSTMFraudDetector(model_path=MODELS_DIR)
     
-    lstm_model_path = Path("models/fraud_detector_lstm.pt")
+    lstm_model_path = MODELS_DIR / "fraud_detector_lstm.pt"
     if lstm_model_path.exists():
         try:
             lstm_detector.load_model()
             lstm_detector.load_scaler()
             lstm_detector.load_feature_names()
+            _validate_loaded_preprocessing(
+                lstm_detector, lstm_detector.model.lstm.input_size
+            )
             print("PyTorch LSTM model loaded successfully")
         except Exception as e:
-            print(f"Warning: Error loading LSTM model: {e}")
+            logger.exception("Unable to load synthetic LSTM artifacts")
             lstm_detector.model = None
     else:
         print("Warning: No trained LSTM model found. Train via /train-lstm endpoint.")
+
+    # ULB model uses its own checkpoint, adapter, and scaler artifacts.
+    ulb_detector = ULBFraudDetector(model_path=MODELS_DIR)
+    ulb_model_path = MODELS_DIR / "fraud_detector_ulb.pt"
+    if ulb_model_path.exists():
+        try:
+            ulb_detector.load_model()
+            ulb_detector.load_preprocessing()
+            print("ULB MLP model loaded successfully")
+        except Exception as e:
+            logger.exception("Unable to load ULB model artifacts")
+            ulb_detector.model = None
+    else:
+        print("Warning: No trained ULB model found.")
     
     # Load MLP training history
-    history_path = Path("models/training_history.json")
+    history_path = MODELS_DIR / "training_history.json"
     if history_path.exists():
         with open(history_path, 'r') as f:
             training_history = json.load(f)
     
     # Load LSTM training history
-    lstm_history_path = Path("models/training_history_lstm.json")
+    lstm_history_path = MODELS_DIR / "training_history_lstm.json"
     if lstm_history_path.exists():
         with open(lstm_history_path, 'r') as f:
             training_history_lstm = json.load(f)
     
     # Load MLP eval metrics
-    metrics_path = Path("models/eval_metrics.json")
+    metrics_path = MODELS_DIR / "eval_metrics.json"
     if metrics_path.exists():
         with open(metrics_path, 'r') as f:
             eval_metrics = json.load(f)
     
     # Load LSTM eval metrics
-    lstm_metrics_path = Path("models/eval_metrics_lstm.json")
+    lstm_metrics_path = MODELS_DIR / "eval_metrics_lstm.json"
     if lstm_metrics_path.exists():
         with open(lstm_metrics_path, 'r') as f:
             eval_metrics_lstm = json.load(f)
@@ -147,10 +250,13 @@ async def root():
         "framework": "PyTorch",
         "endpoints": {
             "predict": "/predict",
+            "predict_ulb": "/predict-ulb",
+            "batch_predict_ulb": "/batch-predict-ulb",
             "predict_lstm": "/predict-lstm",
             "batch_predict": "/batch-predict",
             "health": "/health",
             "model_info": "/model-info",
+            "model_info_ulb": "/model-info-ulb",
             "model_info_lstm": "/model-info-lstm",
             "training_history": "/training-history",
             "metrics": "/metrics",
@@ -167,6 +273,7 @@ async def health_check():
         "status": "healthy",
         "model_loaded": detector is not None and detector.model is not None,
         "lstm_model_loaded": lstm_detector is not None and lstm_detector.model is not None,
+        "ulb_model_loaded": ulb_detector is not None and ulb_detector.model is not None,
         "device": str(detector.device) if detector else "N/A",
         "framework": "PyTorch"
     }
@@ -193,12 +300,26 @@ async def model_info():
     }
 
 
+@app.get("/model-info-ulb")
+async def ulb_model_info():
+    if ulb_detector is None or ulb_detector.model is None:
+        return {"message": "No ULB model loaded."}
+    return {
+        "model_name": "fraud_detector_ulb.pt",
+        "dataset": "ULB/Worldline credit-card fraud benchmark",
+        "feature_count": len(ulb_detector.feature_names),
+        "threshold": ulb_detector.threshold,
+        "model_type": "FraudDetectorNet (MLP)",
+        "features_used": list(ulb_detector.feature_names),
+    }
+
+
 @app.get("/training-history")
 async def get_training_history():
     """Get training metrics history for visualization"""
     global training_history
     
-    history_path = Path("models/training_history.json")
+    history_path = MODELS_DIR / "training_history.json"
     if history_path.exists():
         with open(history_path, 'r') as f:
             training_history = json.load(f)
@@ -212,7 +333,7 @@ async def get_metrics():
     """Get MLP evaluation metrics"""
     global eval_metrics
     
-    metrics_path = Path("models/eval_metrics.json")
+    metrics_path = MODELS_DIR / "eval_metrics.json"
     if metrics_path.exists():
         with open(metrics_path, 'r') as f:
             eval_metrics = json.load(f)
@@ -226,7 +347,7 @@ async def get_lstm_metrics():
     """Get LSTM evaluation metrics"""
     global eval_metrics_lstm
     
-    metrics_path = Path("models/eval_metrics_lstm.json")
+    metrics_path = MODELS_DIR / "eval_metrics_lstm.json"
     if metrics_path.exists():
         with open(metrics_path, 'r') as f:
             eval_metrics_lstm = json.load(f)
@@ -240,7 +361,7 @@ async def get_lstm_training_history():
     """Get LSTM training metrics history for visualization"""
     global training_history_lstm
     
-    history_path = Path("models/training_history_lstm.json")
+    history_path = MODELS_DIR / "training_history_lstm.json"
     if history_path.exists():
         with open(history_path, 'r') as f:
             training_history_lstm = json.load(f)
@@ -272,8 +393,52 @@ async def predict_fraud(transaction: Transaction):
             message=message
         )
         
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Prediction error: {str(e)}")
+    except Exception:
+        logger.exception("Synthetic MLP prediction failed")
+        raise HTTPException(status_code=500, detail="Prediction failed due to an internal error.") from None
+
+
+def _ulb_response(result):
+    return ULBPredictionResponse(
+        model_name="fraud_detector_ulb.pt",
+        is_fraud=result['is_fraud'],
+        predicted_class=result['predicted_class'],
+        fraud_probability=result['fraud_probability'],
+        threshold=result['threshold'],
+        risk_level=result['risk_level'],
+        message=("Transaction flagged as potentially fraudulent" if result['is_fraud']
+                 else "Transaction appears legitimate"),
+    )
+
+
+@app.post("/predict-ulb", response_model=ULBPredictionResponse)
+async def predict_fraud_ulb(transaction: ULBTransaction):
+    """Explicitly select the ULB model for ULB-schema transactions."""
+    if ulb_detector is None or ulb_detector.model is None:
+        raise HTTPException(status_code=503, detail="ULB model not loaded.")
+    try:
+        return _ulb_response(ulb_detector.predict(transaction.model_dump()))
+    except Exception:
+        logger.exception("ULB prediction failed")
+        raise HTTPException(status_code=500, detail="ULB prediction failed due to an internal error.") from None
+
+
+@app.post("/batch-predict-ulb", response_model=ULBBatchPredictionResponse)
+async def batch_predict_fraud_ulb(request: ULBBatchPredictionRequest):
+    """Batch inference using the ULB model's fixed saved threshold."""
+    if ulb_detector is None or ulb_detector.model is None:
+        raise HTTPException(status_code=503, detail="ULB model not loaded.")
+    try:
+        predictions = [_ulb_response(ulb_detector.predict(tx.model_dump()))
+                       for tx in request.transactions]
+    except Exception:
+        logger.exception("ULB batch prediction failed")
+        raise HTTPException(status_code=500, detail="ULB batch prediction failed due to an internal error.") from None
+    return ULBBatchPredictionResponse(
+        predictions=predictions,
+        total_transactions=len(predictions),
+        flagged_count=sum(item.is_fraud for item in predictions),
+    )
 
 
 @app.post("/batch-predict", response_model=BatchPredictionResponse)
@@ -284,25 +449,28 @@ async def batch_predict_fraud(request: BatchPredictionRequest):
     
     predictions = []
     flagged_count = 0
-    
-    for transaction in request.transactions:
-        transaction_dict = transaction.model_dump()
-        transaction_dict.pop('device_id')
-        
-        result = detector.predict(transaction_dict, request.threshold)
-        
-        if result['is_fraud']:
-            flagged_count += 1
-            message = "Transaction flagged as potentially fraudulent"
-        else:
-            message = "Transaction appears legitimate"
-        
-        predictions.append(PredictionResponse(
-            is_fraud=result['is_fraud'],
-            fraud_probability=result['fraud_probability'],
-            risk_level=result['risk_level'],
-            message=message
-        ))
+    try:
+        for transaction in request.transactions:
+            transaction_dict = transaction.model_dump()
+            transaction_dict.pop('device_id')
+            result = detector.predict(
+                transaction_dict,
+                request.threshold if request.threshold is not None else 0.5,
+            )
+            if result['is_fraud']:
+                flagged_count += 1
+                message = "Transaction flagged as potentially fraudulent"
+            else:
+                message = "Transaction appears legitimate"
+            predictions.append(PredictionResponse(
+                is_fraud=result['is_fraud'],
+                fraud_probability=result['fraud_probability'],
+                risk_level=result['risk_level'],
+                message=message
+            ))
+    except Exception:
+        logger.exception("Synthetic batch prediction failed")
+        raise HTTPException(status_code=500, detail="Batch prediction failed due to an internal error.") from None
     
     return BatchPredictionResponse(
         predictions=predictions,
@@ -337,11 +505,12 @@ async def train_model():
         X_train_scaled, X_val_scaled = preprocessor.fit_transform(X_train, X_val)
         X_test_scaled = preprocessor.transform(X_test)
         
-        os.makedirs('models', exist_ok=True)
-        pickle.dump(preprocessor.scaler, open('models/scaler_mlp.pkl', 'wb'))
+        MODELS_DIR.mkdir(parents=True, exist_ok=True)
+        with (MODELS_DIR / 'scaler_mlp.pkl').open('wb') as scaler_file:
+            pickle.dump(preprocessor.scaler, scaler_file)
         
         feature_names = list(X_train.columns)
-        with open('models/feature_names.json', 'w') as f:
+        with (MODELS_DIR / 'feature_names.json').open('w', encoding='utf-8') as f:
             json.dump(feature_names, f)
         
         # Create data loaders
@@ -359,7 +528,7 @@ async def train_model():
             train_loader, val_loader, y_train,
             epochs=50, learning_rate=0.001, patience=10
         )
-        trainer.save_model('models/')
+        trainer.save_model(str(MODELS_DIR))
         
         # Evaluate
         predictions, probabilities = trainer.predict(X_test_scaled)
@@ -367,11 +536,11 @@ async def train_model():
         metrics = evaluator.calculate_metrics()
         eval_metrics = {k: float(v) for k, v in metrics.items()}
         
-        with open('models/eval_metrics.json', 'w') as f:
+        with (MODELS_DIR / 'eval_metrics.json').open('w', encoding='utf-8') as f:
             json.dump(eval_metrics, f, indent=2)
         
         # Reload model
-        detector = FraudDetector()
+        detector = FraudDetector(model_path=MODELS_DIR)
         detector.load_model()
         detector.load_scaler()
         detector.load_feature_names()
@@ -382,10 +551,9 @@ async def train_model():
             "metrics": eval_metrics
         }
         
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Training error: {str(e)}")
+    except Exception:
+        logger.exception("Synthetic MLP training failed")
+        raise HTTPException(status_code=500, detail="Training failed due to an internal error.") from None
 
 
 @app.get("/model-info-lstm")
@@ -433,8 +601,9 @@ async def predict_fraud_lstm(transaction: Transaction):
             message=message
         )
         
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"LSTM Prediction error: {str(e)}")
+    except Exception:
+        logger.exception("Synthetic LSTM prediction failed")
+        raise HTTPException(status_code=500, detail="LSTM prediction failed due to an internal error.") from None
 
 
 @app.post("/train-lstm")
@@ -496,10 +665,11 @@ async def train_lstm_model():
         val_df[feature_cols] = preprocessor.transform(val_df[feature_cols])
         test_df[feature_cols] = preprocessor.transform(test_df[feature_cols])
         
-        os.makedirs('models', exist_ok=True)
-        pickle.dump(preprocessor.scaler, open('models/scaler_lstm.pkl', 'wb'))
+        MODELS_DIR.mkdir(parents=True, exist_ok=True)
+        with (MODELS_DIR / 'scaler_lstm.pkl').open('wb') as scaler_file:
+            pickle.dump(preprocessor.scaler, scaler_file)
         
-        with open('models/feature_names_lstm.json', 'w') as f:
+        with (MODELS_DIR / 'feature_names_lstm.json').open('w', encoding='utf-8') as f:
             json.dump(feature_cols, f)
         
         # Create sequence data loaders
@@ -517,7 +687,7 @@ async def train_lstm_model():
             train_loader, val_loader, y_train,
             epochs=50, learning_rate=0.001, patience=10
         )
-        trainer.save_model('models/')
+        trainer.save_model(str(MODELS_DIR))
         
         # Evaluate
         predictions, probabilities = trainer.predict(test_loader)
@@ -534,11 +704,11 @@ async def train_lstm_model():
         metrics = evaluator.calculate_metrics()
         lstm_eval_metrics = {k: float(v) for k, v in metrics.items()}
         
-        with open('models/eval_metrics_lstm.json', 'w') as f:
+        with (MODELS_DIR / 'eval_metrics_lstm.json').open('w', encoding='utf-8') as f:
             json.dump(lstm_eval_metrics, f, indent=2)
         
         # Reload LSTM model
-        lstm_detector = LSTMFraudDetector()
+        lstm_detector = LSTMFraudDetector(model_path=MODELS_DIR)
         lstm_detector.load_model()
         lstm_detector.load_scaler()
         lstm_detector.load_feature_names()
@@ -549,12 +719,11 @@ async def train_lstm_model():
             "metrics": lstm_eval_metrics
         }
         
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"LSTM Training error: {str(e)}")
+    except Exception:
+        logger.exception("Synthetic LSTM training failed")
+        raise HTTPException(status_code=500, detail="LSTM training failed due to an internal error.") from None
 
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="127.0.0.1", port=8000)

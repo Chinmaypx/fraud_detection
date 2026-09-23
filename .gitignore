@@ -1,8 +1,14 @@
 .env
+.env.*
+!.env.example
+!.env.sample
 .venv
 venv/
 env/
 __pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
 *.pyc
 *.pyo
 *.pyd
@@ -34,6 +40,8 @@ npm-debug.log
 yarn-error.log
 yarn-debug.log
 coverage/
+.coverage
+htmlcov/
 .next/
 out/
 build/
@@ -45,11 +53,17 @@ dist/
 .vscode/
 
 # Project specifics
+creditcard.csv
 models/*.pkl
+models/*.joblib
 models/*.pth
 models/*.pt
-data/*.csv
-data/*.json
+data/*
 !data/.gitkeep
+*.zip
+*.7z
+*.rar
+*.tmp
+.streamlit/secrets.toml
 nul
 

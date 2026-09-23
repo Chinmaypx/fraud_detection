@@ -1,0 +1,64 @@
+{
+  "dataset": "ULB/Worldline credit-card fraud benchmark",
+  "deduplicated_exact_rows": 1081,
+  "selected_threshold": 0.9771430492401123,
+  "threshold_selection": "maximum validation F1",
+  "training_loop_validation": {
+    "best_f1": 0.6617647058823529,
+    "threshold": 0.5,
+    "prediction_rule": "probability >= 0.50",
+    "purpose": "early stopping and checkpoint selection"
+  },
+  "validation": {
+    "metrics": {
+      "Accuracy": 0.9996258033026926,
+      "Precision": 0.875,
+      "Recall (Sensitivity)": 0.711864406779661,
+      "Specificity": 0.999902289678533,
+      "F1 Score": 0.7850467289719626,
+      "ROC-AUC": 0.9333886105095456,
+      "PR-AUC": 0.6933498626489448
+    },
+    "selection": {
+      "threshold": 0.9771430492401123,
+      "threshold_method": "maximum validation F1",
+      "f1": 0.7850467289719626,
+      "fraud_count": 59,
+      "legitimate_count": 61406
+    },
+    "confusion_matrix": [
+      [
+        61400,
+        6
+      ],
+      [
+        17,
+        42
+      ]
+    ]
+  },
+  "test": {
+    "metrics": {
+      "Accuracy": 0.999599251936949,
+      "Precision": 0.9814814814814815,
+      "Recall (Sensitivity)": 0.6973684210526315,
+      "Specificity": 0.9999832809469672,
+      "F1 Score": 0.8153846153846154,
+      "ROC-AUC": 0.969387193909337,
+      "PR-AUC": 0.8073090035844505
+    },
+    "average_precision": 0.8073090035844505,
+    "confusion_matrix": [
+      [
+        59811,
+        1
+      ],
+      [
+        23,
+        53
+      ]
+    ],
+    "fraud_count": 76,
+    "legitimate_count": 59812
+  }
+}

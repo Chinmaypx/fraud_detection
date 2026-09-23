@@ -1,11 +1,13 @@
 import { useEffect, useState } from 'react';
-import { getMetrics, getLSTMMetrics, getTrainingHistory, getLSTMTrainingHistory } from '../api';
+import { getMetrics, getLSTMMetrics, getTrainingHistory, getLSTMTrainingHistory, getModelInfo } from '../api';
+import BenchmarkRecords, { ULBMetricDetails } from '../components/BenchmarkRecords';
 
 export default function Metrics() {
   const [mlpMetrics, setMlpMetrics] = useState(null);
   const [lstmMetrics, setLstmMetrics] = useState(null);
   const [mlpHistory, setMlpHistory] = useState(null);
   const [lstmHistory, setLstmHistory] = useState(null);
+  const [mlpModelInfo, setMlpModelInfo] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('comparison');
 
@@ -15,11 +17,13 @@ export default function Metrics() {
       getLSTMMetrics().catch(() => null),
       getTrainingHistory().catch(() => null),
       getLSTMTrainingHistory().catch(() => null),
-    ]).then(([m, lm, h, lh]) => {
+      getModelInfo().catch(() => null),
+    ]).then(([m, lm, h, lh, mi]) => {
       setMlpMetrics(m?.message ? null : m);
       setLstmMetrics(lm?.message ? null : lm);
       setMlpHistory(h?.message ? null : h);
       setLstmHistory(lh?.message ? null : lh);
+      setMlpModelInfo(mi?.message ? null : mi);
       setLoading(false);
     });
   }, []);
@@ -29,25 +33,6 @@ export default function Metrics() {
       <div className="loading-overlay">
         <div className="spinner"></div>
         <span>Loading metrics...</span>
-      </div>
-    );
-  }
-
-  if (!mlpMetrics && !lstmMetrics) {
-    return (
-      <div>
-        <div className="page-header">
-          <h2>Model Metrics</h2>
-          <p>Detailed evaluation of the trained models</p>
-        </div>
-        <div className="card">
-          <div className="empty-state">
-            <p>No metrics available</p>
-            <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '8px' }}>
-              Train at least one model to see evaluation metrics
-            </p>
-          </div>
-        </div>
       </div>
     );
   }
@@ -69,7 +54,14 @@ export default function Metrics() {
     <div>
       <div className="page-header">
         <h2>Model Metrics</h2>
-        <p>Detailed evaluation of MLP & LSTM neural networks</p>
+        <p>Synthetic model metrics and the separately reported ULB real-world benchmark</p>
+      </div>
+
+      <div style={{ marginBottom: 'var(--space-xl)' }}>
+        <BenchmarkRecords syntheticMetrics={mlpMetrics} syntheticFeatures={mlpModelInfo?.features_used} />
+      </div>
+      <div style={{ marginBottom: 'var(--space-xl)' }}>
+        <ULBMetricDetails />
       </div>
 
       {/* Tab Selector */}
@@ -118,7 +110,6 @@ export default function Metrics() {
                   <th style={{ textAlign: 'center' }}>
                     <span className="model-tag lstm" style={{ fontSize: '0.65rem' }}>LSTM</span>
                   </th>
-                  <th style={{ textAlign: 'center' }}>Winner</th>
                   <th style={{ width: '25%' }}>Visual</th>
                 </tr>
               </thead>
@@ -126,9 +117,6 @@ export default function Metrics() {
                 {metricsList.map((m) => {
                   const mlpVal = mlpMetrics?.[m.key];
                   const lstmVal = lstmMetrics?.[m.key];
-                  const mlpBetter = mlpVal != null && lstmVal != null && mlpVal > lstmVal;
-                  const lstmBetter = mlpVal != null && lstmVal != null && lstmVal > mlpVal;
-                  const tied = mlpVal != null && lstmVal != null && Math.abs(mlpVal - lstmVal) < 0.0001;
                   return (
                     <tr key={m.key}>
                       <td>
@@ -136,25 +124,14 @@ export default function Metrics() {
                         <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>{m.desc}</div>
                       </td>
                       <td style={{ textAlign: 'center' }}>
-                        <span className="metric-value" style={{ color: mlpBetter ? '#3b82f6' : 'var(--text-secondary)', fontWeight: mlpBetter ? 700 : 400 }}>
+                        <span className="metric-value" style={{ color: '#3b82f6' }}>
                           {mlpVal != null ? (mlpVal * 100).toFixed(2) + '%' : '—'}
                         </span>
                       </td>
                       <td style={{ textAlign: 'center' }}>
-                        <span className="metric-value" style={{ color: lstmBetter ? '#8b5cf6' : 'var(--text-secondary)', fontWeight: lstmBetter ? 700 : 400 }}>
+                        <span className="metric-value" style={{ color: '#8b5cf6' }}>
                           {lstmVal != null ? (lstmVal * 100).toFixed(2) + '%' : '—'}
                         </span>
-                      </td>
-                      <td style={{ textAlign: 'center' }}>
-                        {tied ? (
-                          <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>Tied</span>
-                        ) : mlpBetter ? (
-                          <span className="model-tag mlp" style={{ fontSize: '0.6rem' }}>MLP +{((mlpVal - lstmVal) * 100).toFixed(2)}pp</span>
-                        ) : lstmBetter ? (
-                          <span className="model-tag lstm" style={{ fontSize: '0.6rem' }}>LSTM +{((lstmVal - mlpVal) * 100).toFixed(2)}pp</span>
-                        ) : (
-                          <span style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>—</span>
-                        )}
                       </td>
                       <td>
                         <div className="metric-bar" style={{ position: 'relative' }}>

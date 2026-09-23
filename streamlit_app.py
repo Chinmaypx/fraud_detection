@@ -8,9 +8,10 @@ import pandas as pd
 import numpy as np
 from pathlib import Path
 import sys
-import os
 
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+PROJECT_ROOT = Path(__file__).resolve().parent
+sys.path.insert(0, str(PROJECT_ROOT))
+MODEL_DIR = PROJECT_ROOT / "models"
 
 from src.data_pipeline import DataPipeline
 from src.preprocessing import Preprocessor
@@ -38,10 +39,8 @@ def load_detector():
     """
     Load trained FraudDetector (PyTorch model, scaler, feature names)
     """
-    detector = FraudDetector()
-    model_path = Path("models/fraud_detector.pt")
-    scaler_path = Path("models/scaler.pkl")
-    features_path = Path("models/feature_names.json")
+    detector = FraudDetector(model_path=MODEL_DIR)
+    model_path = MODEL_DIR / "fraud_detector.pt"
 
     if not model_path.exists():
         return None
@@ -214,7 +213,7 @@ elif page == "Model Evaluation":
         st.warning("⚠️ No trained model found. Please train the model first.")
     else:
         import json
-        metrics_path = Path("models/eval_metrics.json")
+        metrics_path = MODEL_DIR / "eval_metrics.json"
         if metrics_path.exists():
             with open(metrics_path, 'r') as f:
                 saved_metrics = json.load(f)
@@ -300,8 +299,3 @@ elif page == "About":
     - Meet regulatory requirements
     - Scale fraud detection to millions of transactions
     """)
-
-
-if __name__ == "__main__":
-    import subprocess
-    subprocess.run(["streamlit", "run", "streamlit_app.py"])
