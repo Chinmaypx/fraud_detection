@@ -319,7 +319,7 @@ async def train_model():
     try:
         from src.data_pipeline import DataPipeline
         from src.preprocessing import Preprocessor
-        from src.train_model import PyTorchTrainer
+        from src.train_model import PyTorchTrainer, split_train_validation
         from src.pytorch_model import create_data_loaders
         from src.evaluate import ModelEvaluator
         
@@ -330,13 +330,15 @@ async def train_model():
         pipeline.feature_engineering()
         pipeline.encode_categorical()
         X_train, X_test, y_train, y_test = pipeline.prepare_data()
+        X_train, X_val, y_train, y_val = split_train_validation(X_train, y_train)
         
         # Preprocessing
         preprocessor = Preprocessor()
-        X_train_scaled, X_test_scaled = preprocessor.fit_transform(X_train, X_test)
+        X_train_scaled, X_val_scaled = preprocessor.fit_transform(X_train, X_val)
+        X_test_scaled = preprocessor.transform(X_test)
         
         os.makedirs('models', exist_ok=True)
-        pickle.dump(preprocessor.scaler, open('models/scaler.pkl', 'wb'))
+        pickle.dump(preprocessor.scaler, open('models/scaler_mlp.pkl', 'wb'))
         
         feature_names = list(X_train.columns)
         with open('models/feature_names.json', 'w') as f:
@@ -344,9 +346,9 @@ async def train_model():
         
         # Create data loaders
         input_dim = X_train_scaled.shape[1]
-        train_loader, test_loader = create_data_loaders(
+        train_loader, val_loader = create_data_loaders(
             X_train_scaled, y_train.values,
-            X_test_scaled, y_test.values,
+            X_val_scaled, y_val.values,
             batch_size=512
         )
         
@@ -354,7 +356,7 @@ async def train_model():
         trainer = PyTorchTrainer(input_dim)
         trainer.build_model()
         training_history = trainer.train(
-            train_loader, test_loader, y_train,
+            train_loader, val_loader, y_train,
             epochs=50, learning_rate=0.001, patience=10
         )
         trainer.save_model('models/')
@@ -444,55 +446,66 @@ async def train_lstm_model():
         from src.data_pipeline import DataPipeline
         from src.preprocessing import Preprocessor
         from src.train_model import LSTMTrainer
-        from src.pytorch_model import create_sequence_data_loaders
+        from src.pytorch_model import create_chronological_sequence_data_loaders
         from src.evaluate import ModelEvaluator
         import pandas as pd
         
-        # Data pipeline - keep customer_id & transaction_time for sequencing
+        # Ordered sequences require a full timestamp; time-of-day alone is not chronology.
         pipeline = DataPipeline()
         pipeline.load_data()
         pipeline.handle_missing_values()
         pipeline.feature_engineering()
         pipeline.encode_categorical()
         
-        # We need to split while retaining customer_id & transaction_time
-        # for the sequence builder
-        from sklearn.model_selection import train_test_split
-        
         df = pipeline.df.copy()
+        if 'transaction_timestamp' not in df.columns:
+            raise ValueError(
+                'LSTM training requires transaction_timestamp with full date and time. '
+                'The loaded synthetic CSV only has time-of-day; regenerate it with '
+                'generate_dataset.py to create chronological synthetic data.'
+            )
+        df['transaction_timestamp'] = pd.to_datetime(
+            df['transaction_timestamp'], errors='raise'
+        )
         
         # Remove transaction_id & device_id but keep customer_id
         for col in ['transaction_id', 'device_id']:
             if col in df.columns:
                 df.drop(col, axis=1, inplace=True)
         
-        train_df, test_df = train_test_split(
-            df, test_size=0.2, random_state=42, stratify=df['is_fraud']
-        )
+        # A chronological 60/20/20 split; all boundaries are full timestamps.
+        ordered_times = df['transaction_timestamp'].sort_values().reset_index(drop=True)
+        val_boundary = ordered_times.iloc[int(len(ordered_times) * 0.60)]
+        test_boundary = ordered_times.iloc[int(len(ordered_times) * 0.80)]
+        train_df = df[df['transaction_timestamp'] < val_boundary].copy()
+        val_df = df[(df['transaction_timestamp'] >= val_boundary) &
+                    (df['transaction_timestamp'] < test_boundary)].copy()
+        test_df = df[df['transaction_timestamp'] >= test_boundary].copy()
+        if min(len(train_df), len(val_df), len(test_df)) == 0:
+            raise ValueError('Chronological split produced an empty data partition.')
         
         # Determine feature columns (everything except identifiers and target)
-        exclude_cols = {'customer_id', 'is_fraud', 'transaction_time'}
+        exclude_cols = {
+            'customer_id', 'is_fraud', 'transaction_time', 'transaction_timestamp'
+        }
         feature_cols = [c for c in train_df.columns if c not in exclude_cols]
         
         # Scale features in-place
         preprocessor = Preprocessor()
-        train_df[feature_cols] = preprocessor.fit_transform(
-            train_df[feature_cols]
-        )
-        test_df[feature_cols] = preprocessor.transform(
-            test_df[feature_cols]
-        )
+        train_df[feature_cols] = preprocessor.fit_transform(train_df[feature_cols])
+        val_df[feature_cols] = preprocessor.transform(val_df[feature_cols])
+        test_df[feature_cols] = preprocessor.transform(test_df[feature_cols])
         
         os.makedirs('models', exist_ok=True)
-        pickle.dump(preprocessor.scaler, open('models/scaler.pkl', 'wb'))
+        pickle.dump(preprocessor.scaler, open('models/scaler_lstm.pkl', 'wb'))
         
         with open('models/feature_names_lstm.json', 'w') as f:
             json.dump(feature_cols, f)
         
         # Create sequence data loaders
         seq_length = 10
-        train_loader, test_loader, input_dim = create_sequence_data_loaders(
-            train_df, test_df, feature_cols,
+        train_loader, val_loader, test_loader, input_dim = create_chronological_sequence_data_loaders(
+            train_df, val_df, test_df, feature_cols,
             seq_length=seq_length, batch_size=512
         )
         
@@ -501,7 +514,7 @@ async def train_lstm_model():
         trainer.build_model()
         y_train = train_df['is_fraud']
         lstm_history = trainer.train(
-            train_loader, test_loader, y_train,
+            train_loader, val_loader, y_train,
             epochs=50, learning_rate=0.001, patience=10
         )
         trainer.save_model('models/')

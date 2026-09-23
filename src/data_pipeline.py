@@ -54,12 +54,19 @@ class DataPipeline:
         
         n_fraud = int(n_samples * fraud_rate)
         n_legitimate = n_samples - n_fraud
+        legitimate_times = np.random.randint(0, 86400, n_legitimate)
+        fraud_times = np.random.randint(0, 86400, n_fraud)
         
         legitimate_data = {
             'transaction_id': [f'TXN{i:08d}' for i in range(n_legitimate)],
             'customer_id': np.random.randint(1000, 5000, n_legitimate),
             'transaction_amount': np.random.exponential(150, n_legitimate).round(2),
-            'transaction_time': np.random.randint(0, 86400, n_legitimate),
+            'transaction_time': legitimate_times,
+            'transaction_timestamp': (
+                pd.Timestamp('2025-01-01')
+                + pd.to_timedelta(np.random.randint(0, 90, n_legitimate), unit='D')
+                + pd.to_timedelta(legitimate_times, unit='s')
+            ),
             'location': np.random.choice(['Mumbai', 'Delhi', 'Bengaluru', 'Hyderabad', 'Chennai', 'Kolkata', 'Pune', 'Ahmedabad'], n_legitimate),
             'device_id': np.random.choice([f'DEV{i:03d}' for i in range(100)], n_legitimate),
             'merchant_category': np.random.choice(['retail', 'grocery', 'restaurant', 'gas', 'online'], n_legitimate),
@@ -73,7 +80,12 @@ class DataPipeline:
             'transaction_id': [f'TXN{i:08d}' for i in range(n_legitimate, n_samples)],
             'customer_id': np.random.randint(1000, 5000, n_fraud),
             'transaction_amount': np.random.exponential(500, n_fraud).round(2),
-            'transaction_time': np.random.randint(0, 86400, n_fraud),
+            'transaction_time': fraud_times,
+            'transaction_timestamp': (
+                pd.Timestamp('2025-01-01')
+                + pd.to_timedelta(np.random.randint(0, 90, n_fraud), unit='D')
+                + pd.to_timedelta(fraud_times, unit='s')
+            ),
             'location': np.random.choice(['Mumbai', 'Delhi', 'Bengaluru', 'Hyderabad', 'Chennai', 'Kolkata', 'Pune', 'Ahmedabad'], n_fraud),
             'device_id': np.random.choice([f'DEV{i:03d}' for i in range(100)], n_fraud),
             'merchant_category': np.random.choice(['retail', 'grocery', 'restaurant', 'gas', 'online'], n_fraud),
@@ -213,7 +225,7 @@ class DataPipeline:
         categorical_cols = self.df.select_dtypes(include=['object']).columns
         
         for col in categorical_cols:
-            if col not in ['transaction_id', 'device_id']:
+            if col not in ['transaction_id', 'device_id', 'transaction_timestamp']:
                 dummies = pd.get_dummies(self.df[col], prefix=col, drop_first=True)
                 self.df = pd.concat([self.df, dummies], axis=1)
                 self.df.drop(col, axis=1, inplace=True)
@@ -227,12 +239,9 @@ class DataPipeline:
         """
         print("\n--- Preparing Train/Test Split ---")
         
-        if 'transaction_id' in self.df.columns:
-            self.df.drop('transaction_id', axis=1, inplace=True)
-        if 'customer_id' in self.df.columns:
-            self.df.drop('customer_id', axis=1, inplace=True)
-        if 'device_id' in self.df.columns:
-            self.df.drop('device_id', axis=1, inplace=True)
+        for col in ['transaction_id', 'customer_id', 'device_id', 'transaction_timestamp']:
+            if col in self.df.columns:
+                self.df.drop(col, axis=1, inplace=True)
         
         X = self.df.drop('is_fraud', axis=1)
         y = self.df['is_fraud']

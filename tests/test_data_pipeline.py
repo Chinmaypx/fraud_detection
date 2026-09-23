@@ -63,6 +63,11 @@ class TestDataPipeline:
         for col in required_cols:
             assert col in df.columns
 
+    def test_generated_data_has_full_synthetic_timestamp(self):
+        df = DataPipeline()._generate_synthetic_data(n_samples=100)
+        assert 'transaction_timestamp' in df.columns
+        assert pd.to_datetime(df['transaction_timestamp'], errors='coerce').notna().all()
+
     def test_load_data_generates_when_no_path(self):
         """Test load_data generates synthetic data when no path provided"""
         pipeline = DataPipeline()

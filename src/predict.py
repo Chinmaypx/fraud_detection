@@ -42,9 +42,13 @@ class FraudDetector:
         print(f"PyTorch model loaded: {model_name} (input_dim={input_dim})")
         return self.model
     
-    def load_scaler(self, scaler_name='scaler.pkl'):
+    def load_scaler(self, scaler_name=None):
         """Load fitted scaler from disk"""
+        scaler_name = scaler_name or 'scaler_mlp.pkl'
         scaler_file = Path(self.model_path) / scaler_name
+        # Keep old checkpoints usable while preferring the model-specific artifact.
+        if not scaler_file.exists() and scaler_name != 'scaler.pkl':
+            scaler_file = Path(self.model_path) / 'scaler.pkl'
         
         if scaler_file.exists():
             with open(scaler_file, 'rb') as f:
@@ -255,9 +259,12 @@ class LSTMFraudDetector:
         print(f"LSTM model loaded: {model_name} (input_dim={input_dim}, seq_length={self.seq_length})")
         return self.model
 
-    def load_scaler(self, scaler_name='scaler.pkl'):
+    def load_scaler(self, scaler_name=None):
         """Load fitted scaler from disk"""
+        scaler_name = scaler_name or 'scaler_lstm.pkl'
         scaler_file = Path(self.model_path) / scaler_name
+        if not scaler_file.exists() and scaler_name != 'scaler.pkl':
+            scaler_file = Path(self.model_path) / 'scaler.pkl'
 
         if scaler_file.exists():
             with open(scaler_file, 'rb') as f:

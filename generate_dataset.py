@@ -41,6 +41,7 @@ def generate_dataset(n_samples=100000, fraud_rate=0.02, seed=42):
     hour_probs = hour_weights / hour_weights.sum()
     legit_hours = np.random.choice(24, n_legit, p=hour_probs)
     legit_times = legit_hours * 3600 + np.random.randint(0, 3600, n_legit)
+    legit_dates = np.random.randint(0, 90, n_legit)
     legit_avg_amounts = np.clip(np.random.exponential(150, n_legit), 20, 3000).round(2)
     legit_acct_ages = np.random.randint(90, 3650, n_legit)
     legit_txn_counts = np.random.randint(1, 10, n_legit)
@@ -50,6 +51,11 @@ def generate_dataset(n_samples=100000, fraud_rate=0.02, seed=42):
         'customer_id': np.random.randint(1000, 10000, n_legit),
         'transaction_amount': legit_amounts,
         'transaction_time': legit_times,
+        'transaction_timestamp': (
+            pd.Timestamp('2025-01-01')
+            + pd.to_timedelta(legit_dates, unit='D')
+            + pd.to_timedelta(legit_times, unit='s')
+        ),
         'location': np.random.choice(cities, n_legit, p=[0.25, 0.20, 0.15, 0.10, 0.10, 0.08, 0.07, 0.05]),
         'device_id': np.random.choice(devices, n_legit),
         'merchant_category': np.random.choice(merchants, n_legit, p=[0.30, 0.25, 0.20, 0.10, 0.15]),
@@ -72,6 +78,7 @@ def generate_dataset(n_samples=100000, fraud_rate=0.02, seed=42):
     fraud_hour_probs = fraud_hour_weights / fraud_hour_weights.sum()
     fraud_hours = np.random.choice(24, n_fraud, p=fraud_hour_probs)
     fraud_times = fraud_hours * 3600 + np.random.randint(0, 3600, n_fraud)
+    fraud_dates = np.random.randint(0, 90, n_fraud)
     fraud_avg_amounts = np.clip(np.random.exponential(120, n_fraud), 20, 2000).round(2)
     fraud_acct_ages = np.random.choice(
         np.arange(1, 3650), n_fraud,
@@ -84,6 +91,11 @@ def generate_dataset(n_samples=100000, fraud_rate=0.02, seed=42):
         'customer_id': np.random.randint(1000, 10000, n_fraud),
         'transaction_amount': fraud_amounts,
         'transaction_time': fraud_times,
+        'transaction_timestamp': (
+            pd.Timestamp('2025-01-01')
+            + pd.to_timedelta(fraud_dates, unit='D')
+            + pd.to_timedelta(fraud_times, unit='s')
+        ),
         'location': np.random.choice(cities, n_fraud),
         'device_id': np.random.choice(devices, n_fraud),
         'merchant_category': np.random.choice(merchants, n_fraud, p=[0.10, 0.05, 0.05, 0.10, 0.70]),

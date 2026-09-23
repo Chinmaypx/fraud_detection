@@ -276,6 +276,84 @@ class TestGetRiskLevel:
         assert detector._get_risk_level(0.39) == 'LOW'
 
 
+class TestLSTMFraudDetectorProbabilities:
+    def test_predict_returns_sigmoid_probability(self):
+        from src.predict import LSTMFraudDetector
+
+        class FixedLogitModel(torch.nn.Module):
+            def forward(self, x):
+                return torch.full((x.shape[0],), 2.0, device=x.device)
+
+        detector = LSTMFraudDetector(device=torch.device('cpu'))
+        detector.model = FixedLogitModel()
+        detector.feature_names = ['transaction_amount']
+        result = detector.predict({'transaction_amount': 1.0})
+
+        assert result['fraud_probability'] == pytest.approx(1 / (1 + np.exp(-2)))
+        assert result['is_fraud'] is True
+
+    def test_lstm_trainer_predict_returns_probabilities(self):
+        from torch.utils.data import DataLoader, TensorDataset
+        from src.train_model import LSTMTrainer
+
+        class FixedLogitModel(torch.nn.Module):
+            def forward(self, x):
+                return torch.full((x.shape[0],), 2.0, device=x.device)
+
+        trainer = LSTMTrainer(input_dim=1, device=torch.device('cpu'))
+        trainer.model = FixedLogitModel()
+        loader = DataLoader(TensorDataset(
+            torch.zeros((2, 10, 1)), torch.tensor([0.0, 1.0])
+        ), batch_size=2)
+        predictions, probabilities = trainer.predict(loader)
+
+        expected = 1 / (1 + np.exp(-2))
+        assert probabilities.tolist() == pytest.approx([expected, expected])
+        assert predictions.tolist() == [1, 1]
+
+    def test_model_specific_scaler_is_preferred_with_legacy_fallback(self, tmp_path):
+        import pickle
+        from src.predict import FraudDetector, LSTMFraudDetector
+
+        mlp_scaler = tmp_path / 'scaler_mlp.pkl'
+        lstm_scaler = tmp_path / 'scaler_lstm.pkl'
+        legacy_scaler = tmp_path / 'scaler.pkl'
+        with mlp_scaler.open('wb') as f:
+            pickle.dump('mlp', f)
+        with lstm_scaler.open('wb') as f:
+            pickle.dump('lstm', f)
+        with legacy_scaler.open('wb') as f:
+            pickle.dump('legacy', f)
+
+        assert FraudDetector(str(tmp_path)).load_scaler() == 'mlp'
+        assert LSTMFraudDetector(str(tmp_path)).load_scaler() == 'lstm'
+        mlp_scaler.unlink()
+        lstm_scaler.unlink()
+        assert FraudDetector(str(tmp_path)).load_scaler() == 'legacy'
+        assert LSTMFraudDetector(str(tmp_path)).load_scaler() == 'legacy'
+
+    def test_sequence_requires_full_timestamp(self):
+        from src.pytorch_model import SequenceFraudDataset
+
+        df = pd.DataFrame({
+            'customer_id': [1], 'transaction_time': [3600],
+            'feature': [1.0], 'is_fraud': [0],
+        })
+        with pytest.raises(ValueError, match='full date and time'):
+            SequenceFraudDataset(df, ['feature'])
+
+    def test_sequence_orders_by_full_timestamp(self):
+        from src.pytorch_model import SequenceFraudDataset
+
+        df = pd.DataFrame({
+            'customer_id': [1, 1],
+            'transaction_timestamp': ['2025-01-02T01:00:00', '2025-01-01T23:00:00'],
+            'feature': [2.0, 1.0], 'is_fraud': [0, 0],
+        })
+        dataset = SequenceFraudDataset(df, ['feature'], seq_length=2)
+        assert dataset.sequences[-1, :, 0].tolist() == [1.0, 2.0]
+
+
 class TestLoadModel:
     """Tests for model loading"""
 

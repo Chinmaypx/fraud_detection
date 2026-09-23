@@ -8,6 +8,7 @@ import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 import numpy as np
+import pandas as pd
 
 
 class FraudDataset(Dataset):
@@ -200,39 +201,48 @@ class SequenceFraudDataset(Dataset):
     transactions from the same customer (sorted by time) to form a sequence.
     Sequences shorter than seq_length are zero-padded on the left.
     """
-    def __init__(self, df, feature_cols, target_col='is_fraud', seq_length=10):
+    def __init__(self, df, feature_cols, target_col='is_fraud', seq_length=10,
+                 history_df=None):
         self.seq_length = seq_length
         self.sequences, self.labels = self._create_sequences(
-            df, feature_cols, target_col
+            df, feature_cols, target_col, history_df
         )
 
-    def _create_sequences(self, df, feature_cols, target_col):
+    def _create_sequences(self, df, feature_cols, target_col, history_df=None):
         sequences = []
         labels = []
+        timestamp_col = 'transaction_timestamp'
+        if timestamp_col not in df.columns:
+            raise ValueError(
+                'LSTM sequences require transaction_timestamp with full date and time; '
+                'transaction_time is only time-of-day and cannot establish chronology.'
+            )
 
-        # Sort by customer and time to build temporal sequences
-        sort_col = 'transaction_time' if 'transaction_time' in df.columns else None
-        if sort_col is None:
-            # Fallback: use index order
-            grouped = df.groupby('customer_id')
+        targets = df.copy()
+        targets['_sequence_target'] = True
+        if history_df is not None and len(history_df):
+            history = history_df.copy()
+            history['_sequence_target'] = False
+            combined = pd.concat([history, targets], ignore_index=True)
         else:
-            grouped = df.sort_values(sort_col).groupby('customer_id')
+            combined = targets
+        combined[timestamp_col] = pd.to_datetime(combined[timestamp_col], errors='raise')
+        combined = combined.sort_values(
+            ['customer_id', timestamp_col], kind='mergesort'
+        )
 
-        for _, group in grouped:
-            features = group[feature_cols].values
-            targets = group[target_col].values
-
-            for i in range(len(features)):
+        for _, group in combined.groupby('customer_id', sort=False):
+            features = group[feature_cols].to_numpy()
+            is_target = group['_sequence_target'].to_numpy()
+            label_values = group[target_col].to_numpy()
+            for i in np.flatnonzero(is_target):
                 start_idx = max(0, i - self.seq_length + 1)
                 seq = features[start_idx:i + 1]
-
-                # Zero-pad sequences shorter than seq_length
                 if len(seq) < self.seq_length:
                     pad = np.zeros((self.seq_length - len(seq), features.shape[1]))
                     seq = np.vstack([pad, seq])
-
                 sequences.append(seq)
-                labels.append(targets[i])
+                labels.append(label_values[i])
 
         return (
             torch.FloatTensor(np.array(sequences)),
@@ -282,6 +292,34 @@ def create_sequence_data_loaders(
 
     input_dim = len(feature_cols)
     return train_loader, test_loader, input_dim
+
+
+def create_chronological_sequence_data_loaders(
+    train_df, val_df, test_df, feature_cols, target_col='is_fraud',
+    seq_length=10, batch_size=512
+):
+    """Build ordered sequence datasets; later partitions may use only past context."""
+    train_dataset = SequenceFraudDataset(
+        train_df, feature_cols, target_col, seq_length
+    )
+    val_dataset = SequenceFraudDataset(
+        val_df, feature_cols, target_col, seq_length, history_df=train_df
+    )
+    test_history = pd.concat([train_df, val_df], ignore_index=True)
+    test_dataset = SequenceFraudDataset(
+        test_df, feature_cols, target_col, seq_length, history_df=test_history
+    )
+
+    def loader(dataset, shuffle):
+        return DataLoader(
+            dataset, batch_size=batch_size, shuffle=shuffle,
+            num_workers=0, pin_memory=True,
+        )
+
+    return (
+        loader(train_dataset, True), loader(val_dataset, False),
+        loader(test_dataset, False), len(feature_cols)
+    )
 
 
 def get_class_weights(y_train):

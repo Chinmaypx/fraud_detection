@@ -12,12 +12,20 @@ import os
 import json
 import pickle
 from datetime import datetime
+from sklearn.model_selection import train_test_split
 
 from .pytorch_model import (
     FraudDetectorNet,
     FraudLSTMNet,
     get_class_weights, create_data_loaders
 )
+
+
+def split_train_validation(X, y, validation_size=0.25, random_state=42):
+    """Split the development partition, leaving the held-out test data untouched."""
+    return train_test_split(
+        X, y, test_size=validation_size, random_state=random_state, stratify=y
+    )
 
 
 class PyTorchTrainer:
@@ -290,14 +298,17 @@ def main():
     
     # Step 1: Data Pipeline
     pipeline, X_train, X_test, y_train, y_test = data_main()
+
+    X_train, X_val, y_train, y_val = split_train_validation(X_train, y_train)
     
     # Step 2: Preprocessing
     preprocessor = Preprocessor()
-    X_train_scaled, X_test_scaled = preprocessor.fit_transform(X_train, X_test)
+    X_train_scaled, X_val_scaled = preprocessor.fit_transform(X_train, X_val)
+    X_test_scaled = preprocessor.transform(X_test)
     
     # Save scaler
     os.makedirs('models', exist_ok=True)
-    pickle.dump(preprocessor.scaler, open('models/scaler.pkl', 'wb'))
+    pickle.dump(preprocessor.scaler, open('models/scaler_mlp.pkl', 'wb'))
     
     # Save feature names
     feature_names = list(X_train.columns)
@@ -306,9 +317,9 @@ def main():
     
     # Step 3: Create data loaders
     input_dim = X_train_scaled.shape[1]
-    train_loader, test_loader = create_data_loaders(
+    train_loader, val_loader = create_data_loaders(
         X_train_scaled, y_train.values, 
-        X_test_scaled, y_test.values,
+        X_val_scaled, y_val.values,
         batch_size=512
     )
     
@@ -316,7 +327,7 @@ def main():
     trainer = PyTorchTrainer(input_dim)
     trainer.build_model(dropout_rate=0.3)
     trainer.train(
-        train_loader, test_loader, y_train,
+        train_loader, val_loader, y_train,
         epochs=50, learning_rate=0.001, patience=10
     )
     
@@ -462,7 +473,7 @@ class LSTMTrainer:
                 optimizer.step()
 
                 train_loss += loss.item() * batch_X.size(0)
-                preds = (outputs >= 0.5).float()
+                preds = (torch.sigmoid(outputs) >= 0.5).float()
                 all_train_preds.append(preds.cpu())
                 all_train_labels.append(batch_y.cpu())
 
@@ -489,7 +500,7 @@ class LSTMTrainer:
                     loss = (criterion(outputs, batch_y) * weights).mean()
 
                     val_loss += loss.item() * batch_X.size(0)
-                    preds = (outputs >= 0.5).float()
+                    preds = (torch.sigmoid(outputs) >= 0.5).float()
                     all_val_preds.append(preds.cpu())
                     all_val_labels.append(batch_y.cpu())
 
@@ -582,7 +593,7 @@ class LSTMTrainer:
         with torch.no_grad():
             for batch_X, batch_y in test_loader:
                 batch_X = batch_X.to(self.device)
-                probs = self.model(batch_X).cpu().numpy()
+                probs = torch.sigmoid(self.model(batch_X)).cpu().numpy()
                 preds = (probs >= threshold).astype(int)
                 all_probs.append(probs)
                 all_preds.append(preds)
