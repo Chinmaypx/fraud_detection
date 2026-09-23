@@ -20,7 +20,7 @@ MODELS_DIR = PROJECT_ROOT / "models"
 sys.path.insert(0, str(PROJECT_ROOT))
 logger = logging.getLogger(__name__)
 
-from src.predict import FraudDetector, LSTMFraudDetector, ULBFraudDetector
+from src.predict import FraudDetector, LSTMFraudDetector, IEECISFraudDetector
 
 app = FastAPI(
     title="Fraud Detection API (PyTorch)",
@@ -79,42 +79,22 @@ class BatchPredictionResponse(BaseModel):
     flagged_count: int
 
 
-class ULBTransaction(BaseModel):
-    """One ULB transaction: Time, anonymized PCA features, and Amount."""
+class IEEETransaction(BaseModel):
+    """Interpretable IEEE-CIS inputs used by the dedicated MLP."""
     model_config = ConfigDict(extra='forbid')
-    Time: float = Field(..., ge=0, allow_inf_nan=False)
-    V1: float = Field(..., allow_inf_nan=False)
-    V2: float = Field(..., allow_inf_nan=False)
-    V3: float = Field(..., allow_inf_nan=False)
-    V4: float = Field(..., allow_inf_nan=False)
-    V5: float = Field(..., allow_inf_nan=False)
-    V6: float = Field(..., allow_inf_nan=False)
-    V7: float = Field(..., allow_inf_nan=False)
-    V8: float = Field(..., allow_inf_nan=False)
-    V9: float = Field(..., allow_inf_nan=False)
-    V10: float = Field(..., allow_inf_nan=False)
-    V11: float = Field(..., allow_inf_nan=False)
-    V12: float = Field(..., allow_inf_nan=False)
-    V13: float = Field(..., allow_inf_nan=False)
-    V14: float = Field(..., allow_inf_nan=False)
-    V15: float = Field(..., allow_inf_nan=False)
-    V16: float = Field(..., allow_inf_nan=False)
-    V17: float = Field(..., allow_inf_nan=False)
-    V18: float = Field(..., allow_inf_nan=False)
-    V19: float = Field(..., allow_inf_nan=False)
-    V20: float = Field(..., allow_inf_nan=False)
-    V21: float = Field(..., allow_inf_nan=False)
-    V22: float = Field(..., allow_inf_nan=False)
-    V23: float = Field(..., allow_inf_nan=False)
-    V24: float = Field(..., allow_inf_nan=False)
-    V25: float = Field(..., allow_inf_nan=False)
-    V26: float = Field(..., allow_inf_nan=False)
-    V27: float = Field(..., allow_inf_nan=False)
-    V28: float = Field(..., allow_inf_nan=False)
-    Amount: float = Field(..., ge=0, allow_inf_nan=False)
+    TransactionAmt: float = Field(..., ge=0, allow_inf_nan=False)
+    ProductCD: str = Field(..., min_length=1, max_length=16)
+    hour_of_day: int = Field(..., ge=0, le=23)
+    card4: Optional[str] = Field(None, max_length=32)
+    card6: Optional[str] = Field(None, max_length=32)
+    addr1: Optional[str] = Field(None, max_length=32)
+    addr2: Optional[str] = Field(None, max_length=32)
+    dist1: Optional[float] = Field(None, allow_inf_nan=False)
+    P_emaildomain: Optional[str] = Field(None, max_length=128)
+    DeviceType: Optional[str] = Field(None, max_length=32)
 
 
-class ULBPredictionResponse(BaseModel):
+class IEEEOutput(BaseModel):
     model_name: str
     is_fraud: bool
     predicted_class: int
@@ -124,12 +104,12 @@ class ULBPredictionResponse(BaseModel):
     message: str
 
 
-class ULBBatchPredictionRequest(BaseModel):
-    transactions: List[ULBTransaction] = Field(..., min_length=1, max_length=1000)
+class IEEEBatchPredictionRequest(BaseModel):
+    transactions: List[IEEETransaction] = Field(..., min_length=1, max_length=1000)
 
 
-class ULBBatchPredictionResponse(BaseModel):
-    predictions: List[ULBPredictionResponse]
+class IEEEBatchPredictionResponse(BaseModel):
+    predictions: List[IEEEOutput]
     total_transactions: int
     flagged_count: int
 
@@ -137,15 +117,16 @@ class ULBBatchPredictionResponse(BaseModel):
 # --- Global state ---
 detector = None
 lstm_detector = None
-ulb_detector = None
+ieee_detector = None
 training_history = None
 training_history_lstm = None
 eval_metrics = None
 eval_metrics_lstm = None
+eval_metrics_ieee = None
 
 
 def _validate_loaded_preprocessing(detector, model_input_dim):
-    """Refuse to serve a synthetic checkpoint with missing/mismatched preprocessing."""
+    """Refuse to serve an MLP/LSTM checkpoint with mismatched preprocessing."""
     if detector.scaler is None:
         raise RuntimeError("Model-specific preprocessing scaler is unavailable.")
     if not detector.feature_names:
@@ -161,7 +142,7 @@ def _validate_loaded_preprocessing(detector, model_input_dim):
 @app.on_event("startup")
 async def load_model():
     """Load PyTorch models (MLP + LSTM) and scaler on startup"""
-    global detector, lstm_detector, ulb_detector, training_history, training_history_lstm, eval_metrics, eval_metrics_lstm
+    global detector, lstm_detector, ieee_detector, training_history, training_history_lstm, eval_metrics, eval_metrics_lstm, eval_metrics_ieee
     
     # --- MLP Model ---
     detector = FraudDetector(model_path=MODELS_DIR)
@@ -177,7 +158,7 @@ async def load_model():
             )
             print("PyTorch MLP model loaded successfully")
         except Exception as e:
-            logger.exception("Unable to load synthetic MLP artifacts")
+            logger.exception("Unable to load MLP artifacts")
             detector.model = None
     else:
         print("Warning: No trained MLP model found. Train first via /train endpoint or CLI.")
@@ -196,24 +177,24 @@ async def load_model():
             )
             print("PyTorch LSTM model loaded successfully")
         except Exception as e:
-            logger.exception("Unable to load synthetic LSTM artifacts")
+            logger.exception("Unable to load LSTM artifacts")
             lstm_detector.model = None
     else:
         print("Warning: No trained LSTM model found. Train via /train-lstm endpoint.")
 
-    # ULB model uses its own checkpoint, adapter, and scaler artifacts.
-    ulb_detector = ULBFraudDetector(model_path=MODELS_DIR)
-    ulb_model_path = MODELS_DIR / "fraud_detector_ulb.pt"
-    if ulb_model_path.exists():
+    # IEEE-CIS uses its own checkpoint and preprocessing artifacts.
+    ieee_detector = IEECISFraudDetector(model_path=MODELS_DIR)
+    ieee_model_path = MODELS_DIR / "fraud_detector_ieee.pt"
+    if ieee_model_path.exists():
         try:
-            ulb_detector.load_model()
-            ulb_detector.load_preprocessing()
-            print("ULB MLP model loaded successfully")
-        except Exception as e:
-            logger.exception("Unable to load ULB model artifacts")
-            ulb_detector.model = None
+            ieee_detector.load_model()
+            ieee_detector.load_preprocessing()
+            print("IEEE-CIS MLP model loaded successfully")
+        except Exception:
+            logger.exception("Unable to load IEEE-CIS model artifacts")
+            ieee_detector.model = None
     else:
-        print("Warning: No trained ULB model found.")
+        print("Warning: No trained IEEE-CIS model found.")
     
     # Load MLP training history
     history_path = MODELS_DIR / "training_history.json"
@@ -239,6 +220,11 @@ async def load_model():
         with open(lstm_metrics_path, 'r') as f:
             eval_metrics_lstm = json.load(f)
 
+    ieee_metrics_path = MODELS_DIR / "eval_metrics_ieee.json"
+    if ieee_metrics_path.exists():
+        with open(ieee_metrics_path, 'r', encoding='utf-8') as f:
+            eval_metrics_ieee = json.load(f)
+
 
 @app.get("/")
 async def root():
@@ -250,13 +236,13 @@ async def root():
         "framework": "PyTorch",
         "endpoints": {
             "predict": "/predict",
-            "predict_ulb": "/predict-ulb",
-            "batch_predict_ulb": "/batch-predict-ulb",
+            "predict_ieee": "/predict-ieee",
+            "batch_predict_ieee": "/batch-predict-ieee",
             "predict_lstm": "/predict-lstm",
             "batch_predict": "/batch-predict",
             "health": "/health",
             "model_info": "/model-info",
-            "model_info_ulb": "/model-info-ulb",
+            "model_info_ieee": "/model-info-ieee",
             "model_info_lstm": "/model-info-lstm",
             "training_history": "/training-history",
             "metrics": "/metrics",
@@ -273,7 +259,7 @@ async def health_check():
         "status": "healthy",
         "model_loaded": detector is not None and detector.model is not None,
         "lstm_model_loaded": lstm_detector is not None and lstm_detector.model is not None,
-        "ulb_model_loaded": ulb_detector is not None and ulb_detector.model is not None,
+        "ieee_model_loaded": ieee_detector is not None and ieee_detector.model is not None,
         "device": str(detector.device) if detector else "N/A",
         "framework": "PyTorch"
     }
@@ -300,17 +286,23 @@ async def model_info():
     }
 
 
-@app.get("/model-info-ulb")
-async def ulb_model_info():
-    if ulb_detector is None or ulb_detector.model is None:
-        return {"message": "No ULB model loaded."}
+@app.get("/model-info-ieee")
+async def ieee_model_info():
+    if ieee_detector is None or ieee_detector.model is None:
+        return {"message": "No IEEE-CIS model loaded."}
+    metrics = eval_metrics_ieee or {}
+    params = sum(parameter.numel() for parameter in ieee_detector.model.parameters())
     return {
-        "model_name": "fraud_detector_ulb.pt",
-        "dataset": "ULB/Worldline credit-card fraud benchmark",
-        "feature_count": len(ulb_detector.feature_names),
-        "threshold": ulb_detector.threshold,
+        "model_name": "fraud_detector_ieee.pt",
+        "dataset": "IEEE-CIS Fraud Detection",
+        "feature_count": len(ieee_detector.feature_names),
+        "threshold": ieee_detector.threshold,
         "model_type": "FraudDetectorNet (MLP)",
-        "features_used": list(ulb_detector.feature_names),
+        "features_used": list(ieee_detector.feature_names),
+        "user_facing_features": list(ieee_detector.feature_names),
+        "category_values": ieee_detector.category_values,
+        "metrics": metrics,
+        "total_parameters": params,
     }
 
 
@@ -394,13 +386,13 @@ async def predict_fraud(transaction: Transaction):
         )
         
     except Exception:
-        logger.exception("Synthetic MLP prediction failed")
+        logger.exception("MLP prediction failed")
         raise HTTPException(status_code=500, detail="Prediction failed due to an internal error.") from None
 
 
-def _ulb_response(result):
-    return ULBPredictionResponse(
-        model_name="fraud_detector_ulb.pt",
+def _ieee_response(result):
+    return IEEEOutput(
+        model_name=result.get("model_name", "fraud_detector_ieee.pt"),
         is_fraud=result['is_fraud'],
         predicted_class=result['predicted_class'],
         fraud_probability=result['fraud_probability'],
@@ -411,30 +403,40 @@ def _ulb_response(result):
     )
 
 
-@app.post("/predict-ulb", response_model=ULBPredictionResponse)
-async def predict_fraud_ulb(transaction: ULBTransaction):
-    """Explicitly select the ULB model for ULB-schema transactions."""
-    if ulb_detector is None or ulb_detector.model is None:
-        raise HTTPException(status_code=503, detail="ULB model not loaded.")
+@app.post("/predict-ieee", response_model=IEEEOutput)
+async def predict_fraud_ieee(transaction: IEEETransaction):
+    """Explicit IEEE-CIS prediction using interpretable transaction fields."""
+    if ieee_detector is None or ieee_detector.model is None:
+        raise HTTPException(status_code=503, detail="IEEE-CIS model not loaded.")
+    values = transaction.model_dump()
     try:
-        return _ulb_response(ulb_detector.predict(transaction.model_dump()))
+        ieee_detector.validate_categories(values)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
+    try:
+        return _ieee_response(ieee_detector.predict(values))
     except Exception:
-        logger.exception("ULB prediction failed")
-        raise HTTPException(status_code=500, detail="ULB prediction failed due to an internal error.") from None
+        logger.exception("IEEE-CIS prediction failed")
+        raise HTTPException(status_code=500, detail="IEEE-CIS prediction failed due to an internal error.") from None
 
 
-@app.post("/batch-predict-ulb", response_model=ULBBatchPredictionResponse)
-async def batch_predict_fraud_ulb(request: ULBBatchPredictionRequest):
-    """Batch inference using the ULB model's fixed saved threshold."""
-    if ulb_detector is None or ulb_detector.model is None:
-        raise HTTPException(status_code=503, detail="ULB model not loaded.")
+@app.post("/batch-predict-ieee", response_model=IEEEBatchPredictionResponse)
+async def batch_predict_fraud_ieee(request: IEEEBatchPredictionRequest):
+    """Batch IEEE-CIS inference; capped at 1,000 validated transactions."""
+    if ieee_detector is None or ieee_detector.model is None:
+        raise HTTPException(status_code=503, detail="IEEE-CIS model not loaded.")
     try:
-        predictions = [_ulb_response(ulb_detector.predict(tx.model_dump()))
-                       for tx in request.transactions]
+        values = [tx.model_dump() for tx in request.transactions]
+        for row in values:
+            ieee_detector.validate_categories(row)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from None
+    try:
+        predictions = [_ieee_response(ieee_detector.predict(row)) for row in values]
     except Exception:
-        logger.exception("ULB batch prediction failed")
-        raise HTTPException(status_code=500, detail="ULB batch prediction failed due to an internal error.") from None
-    return ULBBatchPredictionResponse(
+        logger.exception("IEEE-CIS batch prediction failed")
+        raise HTTPException(status_code=500, detail="IEEE-CIS batch prediction failed due to an internal error.") from None
+    return IEEEBatchPredictionResponse(
         predictions=predictions,
         total_transactions=len(predictions),
         flagged_count=sum(item.is_fraud for item in predictions),
@@ -469,7 +471,7 @@ async def batch_predict_fraud(request: BatchPredictionRequest):
                 message=message
             ))
     except Exception:
-        logger.exception("Synthetic batch prediction failed")
+        logger.exception("MLP batch prediction failed")
         raise HTTPException(status_code=500, detail="Batch prediction failed due to an internal error.") from None
     
     return BatchPredictionResponse(
@@ -552,7 +554,7 @@ async def train_model():
         }
         
     except Exception:
-        logger.exception("Synthetic MLP training failed")
+        logger.exception("MLP training failed")
         raise HTTPException(status_code=500, detail="Training failed due to an internal error.") from None
 
 
@@ -602,7 +604,7 @@ async def predict_fraud_lstm(transaction: Transaction):
         )
         
     except Exception:
-        logger.exception("Synthetic LSTM prediction failed")
+        logger.exception("LSTM prediction failed")
         raise HTTPException(status_code=500, detail="LSTM prediction failed due to an internal error.") from None
 
 
@@ -630,8 +632,8 @@ async def train_lstm_model():
         if 'transaction_timestamp' not in df.columns:
             raise ValueError(
                 'LSTM training requires transaction_timestamp with full date and time. '
-                'The loaded synthetic CSV only has time-of-day; regenerate it with '
-                'generate_dataset.py to create chronological synthetic data.'
+                'The loaded generated-demo CSV only has time-of-day; regenerate it with '
+                'generate_dataset.py to create chronological demo data.'
             )
         df['transaction_timestamp'] = pd.to_datetime(
             df['transaction_timestamp'], errors='raise'
@@ -720,7 +722,7 @@ async def train_lstm_model():
         }
         
     except Exception:
-        logger.exception("Synthetic LSTM training failed")
+        logger.exception("LSTM training failed")
         raise HTTPException(status_code=500, detail="LSTM training failed due to an internal error.") from None
 
 

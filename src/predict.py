@@ -187,33 +187,31 @@ class FraudDetector:
         return [self.predict(transaction, threshold) for transaction in transactions]
 
 
-class ULBFraudDetector:
-    """Inference wrapper for the ULB MLP and its ULB-only preprocessing."""
+class IEECISFraudDetector:
+    """Inference wrapper for the IEEE-CIS MLP and isolated preprocessing."""
 
     def __init__(self, model_path=None, device=None):
         self.device = device or torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         self.model_path = model_path if model_path is not None else str(DEFAULT_MODEL_DIR)
         self.model = None
         self.threshold = None
-        from .ulb_dataset import ULBCreditCardDataset
-        self.adapter = ULBCreditCardDataset()
+        from .ieee_cis_dataset import IEECISDataset
+        self.adapter = IEECISDataset()
 
-    @property
-    def feature_names(self):
-        return self.adapter.feature_names
-
-    def load_model(self, model_name='fraud_detector_ulb.pt'):
-        from .ulb_dataset import ULB_FEATURES
+    def load_model(self, model_name='fraud_detector_ieee.pt'):
+        from .ieee_cis_dataset import IEEE_FEATURES
         model_file = Path(self.model_path) / model_name
         if not model_file.is_file():
-            raise FileNotFoundError(f"ULB model file not found: {model_file}")
+            raise FileNotFoundError(f"IEEE-CIS model file not found: {model_file}")
         checkpoint = torch.load(model_file, map_location=self.device, weights_only=True)
-        if checkpoint.get('input_dim') != len(ULB_FEATURES):
-            raise ValueError('ULB checkpoint has an incompatible feature count.')
+        if checkpoint.get('input_dim') != len(IEEE_FEATURES):
+            raise ValueError('IEEE-CIS checkpoint has an incompatible feature count.')
+        if checkpoint.get('feature_names') != IEEE_FEATURES:
+            raise ValueError('IEEE-CIS checkpoint has an incompatible feature order.')
         threshold = checkpoint.get('threshold')
         if threshold is None or not np.isfinite(float(threshold)) or not 0 <= float(threshold) <= 1:
-            raise ValueError('ULB checkpoint has no valid decision threshold.')
-        self.model = FraudDetectorNet(len(ULB_FEATURES)).to(self.device)
+            raise ValueError('IEEE-CIS checkpoint has no valid decision threshold.')
+        self.model = FraudDetectorNet(len(IEEE_FEATURES)).to(self.device)
         self.model.load_state_dict(checkpoint['model_state_dict'])
         self.model.eval()
         self.threshold = float(threshold)
@@ -222,9 +220,20 @@ class ULBFraudDetector:
     def load_preprocessing(self):
         return self.adapter.load_preprocessing(self.model_path)
 
+    @property
+    def feature_names(self):
+        return self.adapter.feature_names
+
+    @property
+    def category_values(self):
+        return self.adapter.category_values or {}
+
+    def validate_categories(self, transaction_data):
+        self.adapter.validate_categories(transaction_data)
+
     def predict(self, transaction_data):
         if self.model is None or self.threshold is None:
-            raise ValueError('ULB model not loaded.')
+            raise ValueError('IEEE-CIS model not loaded.')
         frame = pd.DataFrame([transaction_data]) if isinstance(transaction_data, dict) else transaction_data.copy()
         scaled = self.adapter.transform(frame)
         tensor = torch.as_tensor(
@@ -235,8 +244,9 @@ class ULBFraudDetector:
             # FraudDetectorNet includes sigmoid, so its output is already a probability.
             probability = float(self.model(tensor).reshape(-1)[0].item())
         if not np.isfinite(probability) or not 0.0 <= probability <= 1.0:
-            raise ValueError('ULB model returned an invalid fraud probability.')
+            raise ValueError('IEEE-CIS model returned an invalid fraud probability.')
         return {
+            'model_name': 'fraud_detector_ieee.pt',
             'is_fraud': probability >= self.threshold,
             'predicted_class': int(probability >= self.threshold),
             'fraud_probability': probability,

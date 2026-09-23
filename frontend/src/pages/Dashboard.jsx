@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { getMetrics, getLSTMMetrics, getTrainingHistory, getLSTMTrainingHistory, getModelInfo, getLSTMModelInfo, getULBModelInfo } from '../api';
-import BenchmarkRecords, { ULBMetricDetails } from '../components/BenchmarkRecords';
+import { getMetrics, getLSTMMetrics, getTrainingHistory, getLSTMTrainingHistory, getModelInfo, getLSTMModelInfo, getIEEEModelInfo } from '../api';
+import BenchmarkRecords from '../components/BenchmarkRecords';
 
 export default function Dashboard() {
   const [metrics, setMetrics] = useState(null);
@@ -9,7 +9,7 @@ export default function Dashboard() {
   const [lstmHistory, setLstmHistory] = useState(null);
   const [modelInfo, setModelInfo] = useState(null);
   const [lstmModelInfo, setLstmModelInfo] = useState(null);
-  const [ulbModelInfo, setUlbModelInfo] = useState(null);
+  const [ieeeModelInfo, setIeeeModelInfo] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -20,15 +20,15 @@ export default function Dashboard() {
       getLSTMTrainingHistory().catch(() => null),
       getModelInfo().catch(() => null),
       getLSTMModelInfo().catch(() => null),
-      getULBModelInfo().catch(() => null),
-    ]).then(([m, lm, h, lh, mi, lmi, umi]) => {
+      getIEEEModelInfo().catch(() => null),
+    ]).then(([m, lm, h, lh, mi, lmi, ieeeInfo]) => {
       setMetrics(m?.message ? null : m);
       setLstmMetrics(lm?.message ? null : lm);
       setHistory(h?.message ? null : h);
       setLstmHistory(lh?.message ? null : lh);
       setModelInfo(mi?.message ? null : mi);
       setLstmModelInfo(lmi?.message ? null : lmi);
-      setUlbModelInfo(umi?.message ? null : umi);
+      setIeeeModelInfo(ieeeInfo?.message ? null : ieeeInfo);
       setLoading(false);
     });
   }, []);
@@ -67,7 +67,7 @@ export default function Dashboard() {
     <div>
       <div className="page-header">
         <h2>Dashboard</h2>
-        <p>Separate views of the synthetic models and the ULB real-world benchmark</p>
+        <p>Model activity and benchmark results across the project datasets</p>
       </div>
 
       {/* Accuracy Score Hero Cards */}
@@ -79,7 +79,7 @@ export default function Dashboard() {
             background: 'linear-gradient(90deg, #3b82f6, #60a5fa)',
           }}></div>
           <div className="card-header">
-            <span className="card-title">Synthetic MLP Accuracy</span>
+            <span className="card-title">MLP Accuracy</span>
             <span className="model-tag mlp">MLP</span>
           </div>
           <div style={{ textAlign: 'center', padding: 'var(--space-lg) 0' }}>
@@ -122,7 +122,7 @@ export default function Dashboard() {
             background: 'linear-gradient(90deg, #8b5cf6, #a78bfa)',
           }}></div>
           <div className="card-header">
-            <span className="card-title">Synthetic LSTM Accuracy</span>
+            <span className="card-title">LSTM Accuracy</span>
             <span className="model-tag lstm">LSTM</span>
           </div>
           <div style={{ textAlign: 'center', padding: 'var(--space-lg) 0' }}>
@@ -159,7 +159,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Synthetic MLP/LSTM metrics remain separate from the ULB benchmarks below. */}
+      {/* MLP/LSTM metrics use generated data; IEEE-CIS results remain separate below. */}
       <div className="stats-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
         {comparisonCards.map((stat, i) => (
           <div key={stat.label} className={`stat-card animate-in animate-in-delay-${Math.min(i + 1, 4)}`}>
@@ -180,20 +180,17 @@ export default function Dashboard() {
       </div>
 
       <div style={{ marginTop: 'var(--space-xl)' }}>
-        <BenchmarkRecords syntheticMetrics={metrics} syntheticFeatures={modelInfo?.features_used} />
-      </div>
-      <div style={{ marginTop: 'var(--space-xl)' }}>
-        <ULBMetricDetails />
+        <BenchmarkRecords mlpMetrics={metrics} mlpFeatures={modelInfo?.features_used} ieeeInfo={ieeeModelInfo} />
       </div>
       <div className="card" style={{ marginTop: 'var(--space-xl)' }}>
         <div className="card-header">
-          <span className="card-title">ULB Model Status</span>
-          <span className={`model-tag ${ulbModelInfo ? 'mlp' : ''}`}>{ulbModelInfo ? 'Loaded' : 'Unavailable'}</span>
+          <span className="card-title">IEEE-CIS Fraud Model Status</span>
+          <span className={`model-tag ${ieeeModelInfo ? 'mlp' : ''}`}>{ieeeModelInfo ? 'Loaded' : 'Unavailable'}</span>
         </div>
         <p className="benchmark-note">
-          {ulbModelInfo
-            ? `${ulbModelInfo.model_name} · ${ulbModelInfo.dataset} · ${ulbModelInfo.feature_count} features · threshold ${Number(ulbModelInfo.threshold).toFixed(6)}`
-            : 'The API did not report a loaded ULB model.'}
+          {ieeeModelInfo
+            ? `${ieeeModelInfo.model_name} · ${ieeeModelInfo.dataset} · ${ieeeModelInfo.feature_count} features · threshold ${Number(ieeeModelInfo.threshold).toFixed(6)}`
+            : 'The API did not report a loaded IEEE-CIS model.'}
         </p>
       </div>
 

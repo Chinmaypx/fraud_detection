@@ -29,7 +29,7 @@ export default function Sidebar({ activePage, onNavigate, isTraining, theme, onT
   const isOnline = health !== null;
   const mlpLoaded = health?.model_loaded;
   const lstmLoaded = health?.lstm_model_loaded;
-  const ulbLoaded = health?.ulb_model_loaded;
+  const ieeeLoaded = health?.ieee_model_loaded;
   const isDark = theme === 'dark';
 
   return (
@@ -83,8 +83,8 @@ export default function Sidebar({ activePage, onNavigate, isTraining, theme, onT
               <span>{lstmLoaded ? 'LSTM Model ✓' : 'LSTM Not Loaded'}</span>
             </div>
             <div className="status-badge" style={{ marginTop: '4px' }}>
-              <span className={`status-dot ${ulbLoaded ? '' : 'offline'}`}></span>
-              <span>{ulbLoaded ? 'ULB Real-World Model ✓' : 'ULB Model Not Loaded'}</span>
+              <span className={`status-dot ${ieeeLoaded ? '' : 'offline'}`}></span>
+              <span>{ieeeLoaded ? 'IEEE-CIS Model ✓' : 'IEEE-CIS Model Not Loaded'}</span>
             </div>
           </>
         )}

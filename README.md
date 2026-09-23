@@ -1,53 +1,49 @@
 # Fraud Detection Project
 
-This repository contains two separate binary fraud-detection benchmarks: a generated synthetic banking-transaction pipeline and an MLP evaluated on the ULB/Worldline credit-card dataset. It includes PyTorch training and inference, a FastAPI service, a React/Vite interface, and a Streamlit synthetic-model demo. These are educational benchmark systems, not validated production decision systems.
+This educational project keeps its original generated banking-transaction demo and adds a separate IEEE-CIS Fraud Detection model. It includes PyTorch MLP/LSTM training, FastAPI inference, a React/Vite frontend, and a Streamlit demo. The generated demo data is programmatically created; it is not a real transaction source. Neither model is represented as a production-validated fraud decision system.
 
-## Data and models
+## Models and data
 
-### Synthetic transaction dataset
+### MLP and LSTM models
 
-`generate_dataset.py` creates 100,000 synthetic transactions with a configured 2% fraud rate. The synthetic schema includes transaction amount and time, customer/account activity, location, merchant category, device ID, and a binary `is_fraud` label. `src/data_pipeline.py` can load `data/transactions.csv`; if that file is absent it can generate the synthetic data in memory. Feature engineering and categorical encoding are specific to this schema.
+The existing MLP and LSTM continue to use the project's generated banking-transaction data and existing architectures. The MLP scores rows independently. The LSTM uses per-customer sequences only where full transaction timestamps are available; its single-transaction API uses a padded sequence and is a prototype input mode.
 
-The synthetic MLP (`FraudDetectorNet`) scores each transaction independently using the engineered and encoded features. The optional synthetic LSTM (`FraudLSTMNet`) uses ordered per-customer sequences when full transaction timestamps are available. It does not apply to ULB data. ULB has no customer or account identifiers, so no LSTM histories are inferred from its `Time` column. Single-transaction LSTM inference uses a padded history and should be treated as a prototype rather than a substitute for a real customer history.
+### IEEE-CIS Fraud Model
 
-### ULB/Worldline credit-card benchmark
+The IEEE-CIS adapter joins `train_transaction.csv` to `train_identity.csv` on `TransactionID`, with the transaction table as the base population. A left join preserves transactions without identity records; their `DeviceType` remains missing and is explicitly encoded. Original CSV files are read without being changed.
 
-The separate ULB pipeline expects `Time`, `V1` through `V28`, `Amount`, and `Class`. `V1`-`V28` are anonymized PCA features; this project does not assign them semantic meanings. The ULB model is an MLP using 30 features (`Time`, `V1`-`V28`, `Amount`). It is binary fraud classification, not multi-type fraud detection.
+The model uses these ten user-facing features, in this order:
 
-The source CSV is not included. Keep it outside the repository and pass its local path explicitly when training. The pipeline sorts/splits chronologically by distinct `Time`, fits its RobustScaler on training rows only, selects the probability threshold on validation data, and evaluates the held-out test partition only after model selection. Exact duplicate rows are handled in memory; the source CSV is not rewritten. The API does not accept dataset paths.
+`TransactionAmt`, `ProductCD`, `hour_of_day`, `card4`, `card6`, `addr1`, `addr2`, `dist1`, `P_emaildomain`, `DeviceType`.
 
-ULB benchmark results for the current saved model:
+`TransactionDT` is elapsed time, not a wall-clock timestamp. The derived `hour_of_day` is `floor(TransactionDT / 3600) modulo 24`, an elapsed-time cycle bucket. It must not be interpreted as a real local or UTC clock hour. No model-only features are used. `TransactionID`, `C1-C14`, `D1-D15`, `M1-M9`, `V1-V339`, `id_01-id_38`, `dist2`, and `R_emaildomain` are excluded.
 
-| Split | Precision | Recall | F1 | ROC-AUC | PR-AUC |
-|---|---:|---:|---:|---:|---:|
-| Validation | 0.8750 | 0.7119 | 0.7850 | 0.9334 | 0.6933 |
-| Held-out test | 0.9815 | 0.6974 | 0.8154 | 0.9694 | 0.8073 |
+Rows are sorted by `TransactionDT` and split chronologically into approximately 70% training, 15% validation, and 15% held-out test partitions. Equal elapsed times stay together. Missing numerical values use training-partition medians; categorical fields use frequency encodings fitted on training rows only. The MLP uses class-weighted loss. Early stopping uses validation data, the probability threshold is selected using validation F1, and the final test partition is evaluated after those choices are complete.
 
-The held-out test confusion matrix is TN=59,811, FP=1, FN=23, TP=53. The saved ULB decision threshold is `0.9771430492401123`; inference flags fraud when probability is greater than or equal to that threshold. These values describe the ULB benchmark only and must not be combined with synthetic metrics.
+Training creates separate IEEE-CIS artifacts: `fraud_detector_ieee.pt`, `ieee_preprocessor.pkl`, `feature_names_ieee.json`, `ieee_feature_metadata.json`, `eval_metrics_ieee.json`, and `training_history_ieee.json`. Existing MLP and LSTM artifacts are not overwritten. Metrics report validation and held-out test results separately.
 
-Current synthetic MLP metrics from `models/eval_metrics.json`:
+Current IEEE-CIS run (10 selected user-facing features; threshold selected by validation F1):
 
-| Split | Accuracy | Precision | Recall | F1 | ROC-AUC | PR-AUC |
+| Split | Precision | Recall | F1 | Specificity | ROC-AUC | PR-AUC |
 |---|---:|---:|---:|---:|---:|---:|
-| Synthetic held-out test | 0.9915 | 0.7027 | 0.9925 | 0.8228 | 0.9998 | 0.9949 |
+| Validation | 0.2355 | 0.2827 | 0.2570 | 0.9675 | 0.7539 | 0.1614 |
+| Held-out test | 0.2077 | 0.2636 | 0.2323 | 0.9637 | 0.7531 | 0.1537 |
 
-These are results from a different dataset and split than the ULB metrics; they are separate benchmark records, not a direct model ranking.
+The validation-selected threshold is `0.7428748608`. The held-out test confusion matrix is TN=81,933, FP=3,083, FN=2,257, TP=808. The split contains 88,081 test transactions, including 3,065 fraud cases. These are baseline results for the specified feature set and chronological split; they are not a guarantee of operational performance.
 
-### Model and preprocessing artifacts
+The supplied IEEE-CIS CSV files are local inputs and are not included in the repository. Pass their paths at training time:
 
-Model checkpoints and Python scaler pickles are local generated artifacts and are excluded by `.gitignore`. They must be present locally for the corresponding trained model to load. Metrics, feature-name metadata, and training history are JSON artifacts.
+```powershell
+.\.venv\Scripts\python.exe -m src.train_ieee_cis `
+  --transaction-path "C:\path\outside\repository\train_transaction.csv" `
+  --identity-path "C:\path\outside\repository\train_identity.csv"
+```
 
-| Model | Checkpoint | Preprocessing artifacts |
-|---|---|---|
-| Synthetic MLP | `models/fraud_detector.pt` | `scaler_mlp.pkl`, `feature_names.json` |
-| Synthetic LSTM (optional) | `models/fraud_detector_lstm.pt` | `scaler_lstm.pkl`, `feature_names_lstm.json` |
-| ULB MLP | `models/fraud_detector_ulb.pt` | `scaler_ulb.pkl`, `feature_names_ulb.json` |
-
-`models/scaler.pkl` is a legacy synthetic scaler name and remains available for backward-compatible inference when a model-specific scaler is absent. New MLP, LSTM, and ULB training writes model-specific scaler files; ULB preprocessing is loaded only from its ULB-specific artifacts. The current workspace has no LSTM checkpoint, so LSTM inference is unavailable until that model is trained.
+You can also set `IEEE_CIS_TRANSACTION_CSV` and `IEEE_CIS_IDENTITY_CSV`. Training does not accept filesystem paths through the API. Do not place the source CSVs in Git.
 
 ## Environment setup
 
-The project was verified with Python 3.12.6. Create and use a project virtual environment from the repository root in PowerShell:
+The project is configured for Python 3.12. Create and use its virtual environment from the repository root:
 
 ```powershell
 py -3.12 -m venv .venv
@@ -55,90 +51,52 @@ py -3.12 -m venv .venv
 python -m pip install -r requirements.txt
 ```
 
-Python requirements are not a full lock file. Most use minimum versions; scikit-learn is constrained to 1.5.x because the saved scaler artifacts were serialized with 1.5.2. Frontend dependencies are lockfile-managed with `frontend/package-lock.json`.
+The Python requirements are not a full lock file. scikit-learn is constrained to the 1.5.x series because the existing scaler pickles were serialized with 1.5.2. Frontend dependencies are lockfile-managed in `frontend/package-lock.json`.
 
-## Training
+## Start the applications
 
-Generate and save the synthetic CSV if desired:
-
-```powershell
-.\.venv\Scripts\python.exe generate_dataset.py
-```
-
-Train the synthetic MLP:
+Run the project launcher:
 
 ```powershell
-.\.venv\Scripts\python.exe -m src.train_model
+.\run_project.ps1
 ```
 
-The optional LSTM can be trained from the API's `/train-lstm` endpoint when synthetic rows have full timestamps. It is not trained on the ULB benchmark.
+It starts FastAPI at `http://127.0.0.1:8000`, React/Vite at `http://localhost:5173`, opens the React app, and can start the optional headless Streamlit demo at `http://localhost:8501`. The launcher does not install packages or start training.
 
-Train/evaluate the ULB MLP by supplying the external CSV path explicitly:
-
-```powershell
-.\.venv\Scripts\python.exe -m src.train_ulb --data-path "C:\path\outside\repository\creditcard.csv"
-```
-
-`ULB_CSV_PATH` may be used instead of `--data-path`. `--model-dir` can select a local artifact output directory. Training creates or replaces the artifacts for that model; it is not needed to run the API when the checkpoints and preprocessing files already exist.
-
-## Run the applications
-
-Start FastAPI from the repository root (artifact paths are resolved from the project location):
+To start services manually, run Uvicorn from the repository root and Vite from `frontend`:
 
 ```powershell
 .\.venv\Scripts\python.exe -m uvicorn api.app:app --host 127.0.0.1 --port 8000
-```
-
-Start the React/Vite development server in another terminal:
-
-```powershell
 cd frontend
-npm ci
-npm run dev
+npm.cmd run dev
 ```
 
-The UI is at `http://localhost:5173`. It offers separate synthetic and ULB prediction modes. The synthetic MLP/LSTM forms and training controls remain synthetic-only. The Streamlit demo is also synthetic-only:
-
-```powershell
-cd ..
-.\.venv\Scripts\python.exe -m streamlit run streamlit_app.py
-```
-
-`run_project.ps1` uses the existing `.venv` and installed frontend dependencies. It does not install packages or silently generate data/train models; unavailable optional services are skipped with a warning.
-
-## API endpoints
+## API
 
 | Method and path | Purpose |
 |---|---|
-| `GET /health` | Loaded model status |
-| `GET /model-info`, `GET /model-info-lstm`, `GET /model-info-ulb` | Model details |
-| `POST /predict` | Synthetic MLP single prediction |
-| `POST /batch-predict` | Synthetic MLP batch (up to 1,000 transactions) |
-| `POST /predict-lstm` | Optional synthetic LSTM single prediction |
-| `POST /predict-ulb` | ULB MLP single prediction with saved threshold |
-| `POST /batch-predict-ulb` | ULB MLP batch (up to 1,000 transactions) |
-| `GET /metrics`, `GET /metrics-lstm` | Synthetic evaluation metrics |
-| `GET /training-history`, `GET /training-history-lstm` | Synthetic training histories |
-| `POST /train`, `POST /train-lstm` | Start synthetic model training |
+| `GET /health` | Loaded MLP, LSTM, and IEEE-CIS model status |
+| `GET /model-info`, `GET /model-info-lstm`, `GET /model-info-ieee` | Model details and IEEE-CIS benchmark metadata |
+| `POST /predict`, `POST /batch-predict` | Existing MLP predictions |
+| `POST /predict-lstm` | Existing LSTM prediction |
+| `POST /predict-ieee`, `POST /batch-predict-ieee` | IEEE-CIS predictions using the ten listed fields |
+| `GET /metrics`, `GET /metrics-lstm` | Existing model metrics |
+| `GET /training-history`, `GET /training-history-lstm` | Existing MLP/LSTM training histories |
+| `POST /train`, `POST /train-lstm` | Existing MLP/LSTM training controls |
 
-The ULB request requires exactly the 30 numeric feature values; its response includes fraud probability, predicted class, risk, threshold, and model name. Request validation rejects non-finite values and extra ULB fields; sanitized 422 responses do not echo request values. Prediction batches are limited to 1,000 rows. API training endpoints are intended for local development; this app has no authentication or authorization layer.
+IEEE-CIS responses include fraud probability, predicted class, decision, risk level, threshold, and model name. Numeric values must be finite, categorical values must be in the saved training vocabulary (or explicitly missing), and batches are limited to 1,000 transactions. Validation errors do not echo submitted values. API training endpoints are for local development; the API has no authentication layer.
 
-## Tests and quality checks
-
-Run the backend suite:
+## Verification
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest -q
-```
-
-The frontend currently defines lint and production-build scripts, but no frontend test script:
-
-```powershell
 cd frontend
 npm.cmd run lint
 npm.cmd run build
 ```
 
+The frontend currently has lint and build scripts but no separate frontend test script.
+
 ## Repository hygiene
 
-`.gitignore` excludes virtual environments, caches, local environment files, Node modules, generated datasets, archives, and model checkpoint/scaler files. The external ULB CSV and model binaries should remain local. Do not commit API keys or secrets. Before sharing the repository, review `git status` and the complete diff.
+`.gitignore` excludes virtual environments, caches, local environment files, Node modules, datasets, archives, and model checkpoint/preprocessing files. Keep datasets and trained model binaries outside Git. Review `git status` and the complete diff before sharing changes.

@@ -1721,23 +1721,34 @@ input[type="range"]::-webkit-slider-thumb:hover {
   line-height: 1.5;
 }
 
-.ulb-feature-grid {
+.ieee-feature-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   gap: var(--space-sm) var(--space-md);
 }
 
-.ulb-feature-grid .form-group {
+.ieee-feature-grid .form-group {
   margin-bottom: 0;
 }
 
-.ulb-feature-grid .form-label {
+.ieee-feature-grid .form-label {
   font-size: 0.72rem;
 }
 
-.ulb-prediction-details {
+.ieee-prediction-details {
   border-top: 1px solid var(--border-subtle);
   border-bottom: 1px solid var(--border-subtle);
   padding: var(--space-md) 0;
+}
+
+.ieee-form-section + .ieee-form-section {
+  margin-top: var(--space-lg);
+}
+
+.ieee-form-section h3 {
+  margin: 0 0 var(--space-sm);
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  font-weight: 700;
 }
 

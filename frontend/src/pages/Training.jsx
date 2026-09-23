@@ -24,7 +24,7 @@ export default function Training({ trainingState, onTrainingUpdate }) {
     ['Scheduler', 'ReduceLROnPlateau'],
     ['Epochs', '50 (early stopping, patience=10)'],
     ['Batch Size', '512'],
-    ['Dataset', '100,000 synthetic transactions (2% fraud)'],
+    ['Dataset', '100,000 generated demo transactions (configured 2% fraud)'],
     ['Imbalance Handling', 'Class-weighted loss function'],
   ];
 
@@ -52,11 +52,11 @@ export default function Training({ trainingState, onTrainingUpdate }) {
     <div>
       <div className="page-header">
         <h2>Model Training</h2>
-        <p>Train the synthetic fraud models. The ULB real-world model is available separately for prediction and benchmark review.</p>
+        <p>Train the existing MLP or LSTM model on the generated transaction dataset. IEEE-CIS is available separately for prediction and benchmark review.</p>
       </div>
 
       <div className="benchmark-note card" style={{ marginBottom: 'var(--space-lg)' }}>
-        These training controls target the synthetic dataset only; they do not train or replace the ULB model.
+        These controls train the existing MLP or LSTM models; they do not train or replace the IEEE-CIS model.
       </div>
 
       {/* Model Selector */}
@@ -210,7 +210,7 @@ export default function Training({ trainingState, onTrainingUpdate }) {
               <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '8px' }}>
                 {selectedModel === 'lstm'
                   ? 'The LSTM model will train on per-customer transaction sequences'
-                  : 'The MLP model will train on 100K synthetic bank transactions'}
+                  : 'The MLP model will train on 100K generated demo bank transactions'}
               </p>
             </div>
           )}

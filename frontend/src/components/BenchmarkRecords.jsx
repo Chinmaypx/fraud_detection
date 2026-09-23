@@ -1,114 +1,95 @@
-const ulbMetrics = {
-  validation: {
-    Precision: 0.8750,
-    Recall: 0.7119,
-    F1: 0.7850,
-    'ROC-AUC': 0.9334,
-    'PR-AUC': 0.6933,
-  },
-  test: {
-    Precision: 0.9815,
-    Recall: 0.6974,
-    F1: 0.8154,
-    'ROC-AUC': 0.9694,
-    'PR-AUC': 0.8073,
-  },
-};
-
 function format(value) {
-  return value == null ? '—' : Number(value).toFixed(4);
+  return value == null || Number.isNaN(Number(value)) ? '—' : Number(value).toFixed(4);
 }
 
-export function ULBMetricDetails() {
-  return (
-    <section className="card animate-in" aria-labelledby="ulb-metrics-heading">
-      <div className="card-header">
-        <span className="card-title" id="ulb-metrics-heading">ULB Real-World Benchmark</span>
-        <span className="model-tag mlp">Held-out test</span>
-      </div>
-      <p className="benchmark-note">
-        ULB/Worldline credit-card fraud benchmark. Validation metrics use the validation split;
-        held-out test metrics and confusion matrix use the separate test split.
-      </p>
-      <div className="grid-2">
-        {['validation', 'test'].map((split) => (
-          <div className="card benchmark-split-card" key={split}>
-            <h3>{split === 'test' ? 'Held-out test' : 'Validation'}</h3>
-            <dl className="benchmark-metrics">
-              {Object.entries(ulbMetrics[split]).map(([name, value]) => (
-                <div key={name}>
-                  <dt>{name}</dt><dd>{format(value)}</dd>
-                </div>
-              ))}
-            </dl>
-            {split === 'test' && (
-              <div className="benchmark-confusion">
-                <strong>Test confusion matrix</strong>
-                <span>TN 59,811 · FP 1 · FN 23 · TP 53</span>
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-    </section>
-  );
+function metricRow(metrics = {}) {
+  return {
+    'ROC-AUC': metrics['ROC-AUC'],
+    'PR-AUC': metrics['PR-AUC'],
+    Precision: metrics.Precision,
+    Recall: metrics['Recall (Sensitivity)'],
+    F1: metrics['F1 Score'],
+  };
 }
 
-export default function BenchmarkRecords({ syntheticMetrics, syntheticFeatures }) {
+export default function BenchmarkRecords({ mlpMetrics, mlpFeatures, ieeeInfo }) {
+  const ieeeReport = ieeeInfo?.metrics || {};
+  const ieeeValidation = ieeeReport.validation?.metrics || {};
+  const ieeeTest = ieeeReport.test?.metrics || {};
+  const ieeeMatrix = ieeeReport.test?.confusion_matrix;
   const records = [
     {
-      dataset: 'Synthetic generated transactions (held-out test)',
-      model: 'Synthetic MLP · FraudDetectorNet',
-      features: syntheticFeatures?.length
-        ? `${syntheticFeatures.length} features: ${syntheticFeatures.join(', ')}`
-        : 'Synthetic engineered transaction features',
-      metrics: {
-        'ROC-AUC': syntheticMetrics?.['ROC-AUC'],
-        'PR-AUC': syntheticMetrics?.['PR-AUC'],
-        Precision: syntheticMetrics?.Precision,
-        Recall: syntheticMetrics?.['Recall (Sensitivity)'],
-        F1: syntheticMetrics?.['F1 Score'],
-      },
+      dataset: 'Generated banking transaction data · held-out test',
+      model: 'MLP Model · FraudDetectorNet',
+      features: mlpFeatures?.length
+        ? `${mlpFeatures.length} features: ${mlpFeatures.join(', ')}`
+        : 'Engineered transaction features',
+      metrics: metricRow(mlpMetrics || {}),
     },
     {
-      dataset: 'ULB/Worldline real-world credit-card fraud benchmark (held-out test)',
-      model: 'ULB MLP · FraudDetectorNet',
-      features: '30: Time, V1–V28 (anonymized PCA features), Amount',
-      metrics: ulbMetrics.test,
+      dataset: 'IEEE-CIS Fraud Detection · chronological held-out test',
+      model: 'IEEE-CIS Fraud Model · FraudDetectorNet',
+      features: ieeeInfo?.features_used?.join(', ') || 'IEEE-CIS user-facing features',
+      metrics: metricRow(ieeeTest),
     },
   ];
-  const metricNames = ['ROC-AUC', 'PR-AUC', 'Precision', 'Recall', 'F1'];
 
   return (
-    <section className="card animate-in" aria-labelledby="benchmark-records-heading">
-      <div className="card-header">
-        <span className="card-title" id="benchmark-records-heading">Benchmark Records</span>
-      </div>
-      <p className="benchmark-note">
-        Results are reported independently for each dataset and held-out test split; they are not ranked.
-      </p>
-      <div className="benchmark-table-wrap">
-        <table className="metrics-table benchmark-table">
-          <thead>
-            <tr>
+    <>
+      <section className="card animate-in" aria-labelledby="benchmark-records-heading">
+        <div className="card-header">
+          <span className="card-title" id="benchmark-records-heading">Benchmark Records</span>
+          <span className="model-tag mlp">Separate datasets</span>
+        </div>
+        <p className="benchmark-note">
+          The original MLP uses generated transaction data. IEEE-CIS results are reported separately;
+          these records are not directly ranked against each other.
+        </p>
+        <div className="table-responsive">
+          <table className="metrics-table benchmark-records-table">
+            <thead><tr>
               <th>Dataset</th><th>Model</th><th>Features</th>
-              {metricNames.map((name) => <th key={name}>{name}</th>)}
-            </tr>
-          </thead>
-          <tbody>
-            {records.map((record) => (
+              <th>ROC-AUC</th><th>PR-AUC</th><th>Precision</th><th>Recall</th><th>F1</th>
+            </tr></thead>
+            <tbody>{records.map((record) => (
               <tr key={record.dataset}>
-                <td>{record.dataset}</td>
-                <td>{record.model}</td>
-                <td className="benchmark-features">{record.features}</td>
-                {metricNames.map((name) => (
-                  <td key={name}>{format(record.metrics[name])}</td>
-                ))}
+                <td>{record.dataset}</td><td>{record.model}</td><td className="benchmark-features">{record.features}</td>
+                {Object.values(record.metrics).map((value, index) => <td key={index}>{format(value)}</td>)}
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </section>
+            ))}</tbody>
+          </table>
+        </div>
+      </section>
+
+      <section className="card animate-in" aria-labelledby="ieee-benchmark-heading" style={{ marginTop: 'var(--space-xl)' }}>
+        <div className="card-header">
+          <span className="card-title" id="ieee-benchmark-heading">IEEE-CIS Fraud Model Benchmark</span>
+          <span className="model-tag mlp">Validation and held-out test</span>
+        </div>
+        <p className="benchmark-note">
+          Chronological train, validation, and test partitions. The decision threshold is selected using validation data;
+          held-out test metrics are calculated after model selection.
+        </p>
+        <div className="grid-2">
+          {[["Validation", ieeeValidation], ["Held-out test", ieeeTest]].map(([label, metrics]) => (
+            <div className="card benchmark-split-card" key={label}>
+              <h3>{label}</h3>
+              <dl className="benchmark-metrics">
+                {Object.entries(metricRow(metrics)).map(([name, value]) => (
+                  <div key={name}><dt>{name}</dt><dd>{format(value)}</dd></div>
+                ))}
+              </dl>
+              {label === 'Held-out test' && ieeeMatrix && (
+                <div className="benchmark-confusion">
+                  <strong>Test confusion matrix</strong>
+                  <span>TN {Number(ieeeMatrix[0][0]).toLocaleString()} · FP {Number(ieeeMatrix[0][1]).toLocaleString()} · FN {Number(ieeeMatrix[1][0]).toLocaleString()} · TP {Number(ieeeMatrix[1][1]).toLocaleString()}</span>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+        {ieeeInfo?.threshold != null && <p className="benchmark-note">Validation-selected decision threshold: {Number(ieeeInfo.threshold).toFixed(6)}</p>}
+      </section>
+    </>
   );
 }

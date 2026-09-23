@@ -1,0 +1,87 @@
+{
+  "dataset": "IEEE-CIS Fraud Detection",
+  "transaction_identity_join": {
+    "transaction_rows_before_join": 590540,
+    "identity_rows": 144233,
+    "transaction_rows_after_join": 590540,
+    "transactions_with_identity_match": 144233,
+    "transactions_without_identity_match": 446307
+  },
+  "evaluation_strategy": "Chronological 70/15/15 partitions by unique TransactionDT; equal elapsed times stay together.",
+  "time_feature_definition": "hour_of_day = floor(TransactionDT / 3600) modulo 24; this is an elapsed-time cycle bucket, not a wall-clock hour.",
+  "features": [
+    "TransactionAmt",
+    "ProductCD",
+    "hour_of_day",
+    "card4",
+    "card6",
+    "addr1",
+    "addr2",
+    "dist1",
+    "P_emaildomain",
+    "DeviceType"
+  ],
+  "class_counts": {
+    "train": {
+      "legitimate": 399858,
+      "fraud": 14588
+    },
+    "validation": {
+      "legitimate": 85003,
+      "fraud": 3010
+    },
+    "test": {
+      "legitimate": 85016,
+      "fraud": 3065
+    }
+  },
+  "threshold_selection": {
+    "method": "maximum validation F1",
+    "threshold": 0.7428748607635498,
+    "validation_f1_at_selected_threshold": 0.2569832402234637,
+    "training_loop_early_stopping_threshold": 0.5,
+    "training_loop_best_validation_f1": 0.18259836282017428
+  },
+  "validation": {
+    "metrics": {
+      "Accuracy": 0.9440878052105939,
+      "Precision": 0.2355383337946305,
+      "Recall (Sensitivity)": 0.28272425249169436,
+      "Specificity": 0.9675070291636766,
+      "F1 Score": 0.2569832402234637,
+      "ROC-AUC": 0.7538737874524108,
+      "PR-AUC": 0.16144297177479203
+    },
+    "confusion_matrix": [
+      [
+        82241,
+        2762
+      ],
+      [
+        2159,
+        851
+      ]
+    ]
+  },
+  "test": {
+    "metrics": {
+      "Accuracy": 0.939373985308977,
+      "Precision": 0.20765869956309432,
+      "Recall (Sensitivity)": 0.2636215334420881,
+      "Specificity": 0.9637362378846335,
+      "F1 Score": 0.23231742380678552,
+      "ROC-AUC": 0.7531342185890813,
+      "PR-AUC": 0.1537352995471363
+    },
+    "confusion_matrix": [
+      [
+        81933,
+        3083
+      ],
+      [
+        2257,
+        808
+      ]
+    ]
+  }
+}

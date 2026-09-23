@@ -1,7 +1,5 @@
-import { useState } from 'react';
-import { predictFraud, predictFraudLSTM, predictFraudULB } from '../api';
-
-const ULB_FIELDS = ['Time', ...Array.from({ length: 28 }, (_, index) => `V${index + 1}`), 'Amount'];
+import { useEffect, useState } from 'react';
+import { getIEEEModelInfo, predictFraud, predictFraudLSTM, predictFraudIEEE } from '../api';
 
 /**
  * Generate a human-readable analysis summary based on the transaction inputs
@@ -181,15 +179,15 @@ export default function Predict() {
 
   const analysis = result && analysisForm ? generateAnalysisSummary(analysisForm) : null;
 
-  if (selectedModel === 'ulb') {
-    return <ULBPredictionPanel selectedModel={selectedModel} onSelectModel={setSelectedModel} />;
+  if (selectedModel === 'ieee') {
+    return <IEEECISPredictionPanel selectedModel={selectedModel} onSelectModel={setSelectedModel} />;
   }
 
   return (
     <div>
       <div className="page-header">
         <h2>Fraud Prediction</h2>
-        <p>Choose the synthetic transaction model or the separate ULB real-world credit-card model</p>
+        <p>Select an MLP, LSTM, or IEEE-CIS fraud model for prediction</p>
       </div>
 
       {/* Model Selector */}
@@ -200,22 +198,22 @@ export default function Predict() {
             className={`model-pill ${selectedModel === 'mlp' ? 'active' : ''}`}
             onClick={() => setSelectedModel('mlp')}
           >
-            Synthetic Fraud Model
+            MLP Model
             <span className="model-pill-badge">MLP</span>
           </button>
           <button
             className={`model-pill ${selectedModel === 'lstm' ? 'active' : ''}`}
             onClick={() => setSelectedModel('lstm')}
           >
-            Synthetic Fraud Model
+            LSTM Model
             <span className="model-pill-badge">LSTM</span>
           </button>
           <button
-            className={`model-pill ${selectedModel === 'ulb' ? 'active' : ''}`}
-            onClick={() => setSelectedModel('ulb')}
+            className={`model-pill ${selectedModel === 'ieee' ? 'active' : ''}`}
+            onClick={() => setSelectedModel('ieee')}
           >
-            Real-World ULB Model
-            <span className="model-pill-badge">Credit Card</span>
+            IEEE-CIS Fraud Model
+            <span className="model-pill-badge">MLP</span>
           </button>
         </div>
       </div>
@@ -600,89 +598,150 @@ export default function Predict() {
   );
 }
 
-function ULBPredictionPanel({ selectedModel, onSelectModel }) {
-  const [form, setForm] = useState(() => Object.fromEntries(ULB_FIELDS.map((field) => [field, 0])));
+function IEEECISPredictionPanel({ onSelectModel }) {
+  const [modelInfo, setModelInfo] = useState(null);
+  const [form, setForm] = useState({
+    TransactionAmt: '100', ProductCD: '', hour_of_day: '12', card4: '', card6: '',
+    addr1: '', addr2: '', dist1: '', P_emaildomain: '', DeviceType: '',
+  });
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    getIEEEModelInfo()
+      .then((info) => {
+        setModelInfo(info?.message ? null : info);
+        const categories = info?.category_values || {};
+        setForm((previous) => ({
+          ...previous,
+          ProductCD: categories.ProductCD?.[0] || '',
+        }));
+      })
+      .catch((requestError) => setError(requestError.message));
+  }, []);
+
+  const setField = (name, value) => setForm((previous) => ({ ...previous, [name]: value }));
+  const categories = modelInfo?.category_values || {};
+  const selectField = (name, label, optional = true) => (
+    <div className="form-group" key={name}>
+      <label className="form-label" htmlFor={`ieee-${name}`}>{label}</label>
+      <select
+        id={`ieee-${name}`}
+        className="form-input"
+        required={!optional}
+        value={form[name]}
+        onChange={(event) => setField(name, event.target.value)}
+      >
+        {optional && <option value="">Not provided</option>}
+        {(categories[name] || []).map((value) => <option value={value} key={value}>{value}</option>)}
+      </select>
+    </div>
+  );
 
   const submit = async (event) => {
     event.preventDefault();
     setLoading(true);
     setError(null);
     setResult(null);
+    const payload = {
+      TransactionAmt: Number(form.TransactionAmt),
+      ProductCD: form.ProductCD,
+      hour_of_day: Number(form.hour_of_day),
+      card4: form.card4 || null,
+      card6: form.card6 || null,
+      addr1: form.addr1 || null,
+      addr2: form.addr2 || null,
+      dist1: form.dist1 === '' ? null : Number(form.dist1),
+      P_emaildomain: form.P_emaildomain || null,
+      DeviceType: form.DeviceType || null,
+    };
     try {
-      setResult(await predictFraudULB(form));
+      setResult(await predictFraudIEEE(payload));
     } catch (requestError) {
-      setError(requestError.message || 'ULB prediction failed. Please try again.');
+      setError(requestError.message || 'IEEE-CIS prediction failed. Please try again.');
     } finally {
       setLoading(false);
     }
   };
 
-  const riskClass = result?.risk_level === 'HIGH' ? 'danger'
-    : result?.risk_level === 'MEDIUM' ? 'warning' : 'safe';
+  const riskClass = result?.risk_level === 'HIGH' ? 'danger' : 'safe';
 
   return (
     <div>
       <div className="page-header">
         <h2>Fraud Prediction</h2>
-        <p>Real-World ULB Credit Card Fraud Model · 30 benchmark features</p>
+        <p>Choose an MLP, LSTM, or IEEE-CIS fraud model</p>
       </div>
       <div className="model-selector">
-        <span className="model-selector-label">Dataset / Model</span>
+        <span className="model-selector-label">Model</span>
         <div className="model-selector-pills">
-          <button className={`model-pill ${selectedModel !== 'ulb' ? 'active' : ''}`} onClick={() => onSelectModel('mlp')}>
-            Synthetic Fraud Model <span className="model-pill-badge">MLP / LSTM</span>
-          </button>
-          <button className="model-pill active" aria-pressed="true">
-            Real-World ULB Model <span className="model-pill-badge">MLP</span>
-          </button>
+          <button className="model-pill" onClick={() => onSelectModel('mlp')}>MLP Model</button>
+          <button className="model-pill" onClick={() => onSelectModel('lstm')}>LSTM Model</button>
+          <button className="model-pill active" aria-pressed="true">IEEE-CIS Fraud Model</button>
         </div>
       </div>
       <div className="benchmark-note card">
-        ULB Time is the benchmark’s elapsed-time feature. V1–V28 are anonymized PCA features; their
-        meanings are not individually interpretable. Enter the feature values as provided.
+        Transaction Hour is derived from elapsed TransactionDT as a 24-hour cycle bucket; it is not a clock time.
+        Missing optional payment, location, email, and device values are handled by the saved training preprocessing.
       </div>
       <div className="grid-2">
         <form className="card animate-in" onSubmit={submit}>
           <div className="card-header">
-            <span className="card-title">ULB Transaction Features</span>
-            <span className="model-tag mlp">30 inputs</span>
+            <span className="card-title">IEEE-CIS Transaction Details</span>
+            <span className="model-tag mlp">{modelInfo?.feature_count || 10} features</span>
           </div>
-          <div className="ulb-feature-grid">
-            {ULB_FIELDS.map((field) => (
-              <div className="form-group" key={field}>
-                <label className="form-label" htmlFor={`ulb-${field}`}>
-                  {field}{field.startsWith('V') ? ' · anonymized PCA feature' : ''}
-                </label>
-                <input
-                  id={`ulb-${field}`}
-                  name={field}
-                  className="form-input"
-                  type="number"
-                  step="any"
-                  min={field === 'Time' || field === 'Amount' ? '0' : undefined}
-                  required
-                  value={form[field]}
-                  onChange={(event) => setForm((previous) => ({
-                    ...previous,
-                    [field]: event.target.value === '' ? '' : Number(event.target.value),
-                  }))}
-                />
+          <section className="ieee-form-section">
+            <h3>Transaction Details</h3>
+            <div className="ieee-feature-grid">
+              <div className="form-group">
+                <label className="form-label" htmlFor="ieee-amount">Transaction Amount</label>
+                <input id="ieee-amount" className="form-input" type="number" step="any" min="0" required value={form.TransactionAmt} onChange={(event) => setField('TransactionAmt', event.target.value)} />
               </div>
-            ))}
-          </div>
+              {selectField('ProductCD', 'Product Category', false)}
+              <div className="form-group">
+                <label className="form-label" htmlFor="ieee-hour">Transaction Hour</label>
+                <input id="ieee-hour" className="form-input" type="number" min="0" max="23" step="1" required value={form.hour_of_day} onChange={(event) => setField('hour_of_day', event.target.value)} />
+              </div>
+            </div>
+          </section>
+          <section className="ieee-form-section">
+            <h3>Payment Details</h3>
+            <div className="ieee-feature-grid">
+              {selectField('card4', 'Card Network')}
+              {selectField('card6', 'Card Type')}
+            </div>
+          </section>
+          <section className="ieee-form-section">
+            <h3>Location Details</h3>
+            <div className="ieee-feature-grid">
+              {selectField('addr1', 'Billing Region')}
+              {selectField('addr2', 'Secondary Billing Region')}
+              <div className="form-group">
+                <label className="form-label" htmlFor="ieee-distance">Transaction Distance</label>
+                <input id="ieee-distance" className="form-input" type="number" step="any" value={form.dist1} onChange={(event) => setField('dist1', event.target.value)} />
+              </div>
+            </div>
+          </section>
+          <section className="ieee-form-section">
+            <h3>Email Details</h3>
+            <div className="ieee-feature-grid">{selectField('P_emaildomain', 'Purchaser Email Domain')}</div>
+          </section>
+          <section className="ieee-form-section">
+            <h3>Device Details</h3>
+            <div className="ieee-feature-grid">{selectField('DeviceType', 'Device Type')}</div>
+          </section>
           {error && <div className="prediction-result danger" role="alert"><div className="result-label">Prediction error</div><p>{error}</p></div>}
-          <button className="btn btn-primary btn-lg" type="submit" disabled={loading} style={{ width: '100%', marginTop: 'var(--space-lg)' }}>
-            {loading ? 'Analyzing ULB transaction…' : 'Analyze with ULB Model'}
+          {!modelInfo && !error && <div className="benchmark-note">IEEE-CIS model metadata is not available.</div>}
+          <button className="btn btn-primary btn-lg" type="submit" disabled={loading || !modelInfo} style={{ width: '100%', marginTop: 'var(--space-lg)' }}>
+            {loading ? 'Analyzing transaction…' : 'Analyze with IEEE-CIS Fraud Model'}
           </button>
         </form>
 
         <div className="card animate-in animate-in-delay-1" aria-live="polite">
           <div className="card-header">
-            <span className="card-title">ULB Prediction Result</span>
-            <span className="model-tag mlp">Real-World ULB</span>
+            <span className="card-title">Prediction Result</span>
+            <span className="model-tag mlp">IEEE-CIS</span>
           </div>
           {result ? (
             <div className={`prediction-result ${riskClass}`}>
@@ -691,7 +750,7 @@ function ULBPredictionPanel({ selectedModel, onSelectModel }) {
                 {(result.fraud_probability * 100).toFixed(2)}%
               </div>
               <span className={`risk-badge ${String(result.risk_level).toLowerCase()}`}>{result.risk_level} RISK</span>
-              <dl className="benchmark-metrics ulb-prediction-details">
+              <dl className="benchmark-metrics ieee-prediction-details">
                 <div><dt>Fraud probability</dt><dd>{Number(result.fraud_probability).toFixed(6)}</dd></div>
                 <div><dt>Predicted class</dt><dd>{result.predicted_class} · {result.predicted_class === 1 ? 'Fraud' : 'Legitimate'}</dd></div>
                 <div><dt>Risk level</dt><dd>{result.risk_level}</dd></div>
@@ -703,7 +762,7 @@ function ULBPredictionPanel({ selectedModel, onSelectModel }) {
           ) : error ? (
             <div className="empty-state"><p>The API could not complete this prediction.</p></div>
           ) : (
-            <div className="empty-state"><p>Enter the ULB feature values and submit to see the result.</p></div>
+            <div className="empty-state"><p>Enter transaction details to see an IEEE-CIS model result.</p></div>
           )}
         </div>
       </div>

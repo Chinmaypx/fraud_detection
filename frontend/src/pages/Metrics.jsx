@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { getMetrics, getLSTMMetrics, getTrainingHistory, getLSTMTrainingHistory, getModelInfo } from '../api';
-import BenchmarkRecords, { ULBMetricDetails } from '../components/BenchmarkRecords';
+import { getMetrics, getLSTMMetrics, getTrainingHistory, getLSTMTrainingHistory, getModelInfo, getIEEEModelInfo } from '../api';
+import BenchmarkRecords from '../components/BenchmarkRecords';
 
 export default function Metrics() {
   const [mlpMetrics, setMlpMetrics] = useState(null);
@@ -8,6 +8,7 @@ export default function Metrics() {
   const [mlpHistory, setMlpHistory] = useState(null);
   const [lstmHistory, setLstmHistory] = useState(null);
   const [mlpModelInfo, setMlpModelInfo] = useState(null);
+  const [ieeeModelInfo, setIeeeModelInfo] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('comparison');
 
@@ -18,12 +19,14 @@ export default function Metrics() {
       getTrainingHistory().catch(() => null),
       getLSTMTrainingHistory().catch(() => null),
       getModelInfo().catch(() => null),
-    ]).then(([m, lm, h, lh, mi]) => {
+      getIEEEModelInfo().catch(() => null),
+    ]).then(([m, lm, h, lh, mi, ieeeInfo]) => {
       setMlpMetrics(m?.message ? null : m);
       setLstmMetrics(lm?.message ? null : lm);
       setMlpHistory(h?.message ? null : h);
       setLstmHistory(lh?.message ? null : lh);
       setMlpModelInfo(mi?.message ? null : mi);
+      setIeeeModelInfo(ieeeInfo?.message ? null : ieeeInfo);
       setLoading(false);
     });
   }, []);
@@ -54,14 +57,11 @@ export default function Metrics() {
     <div>
       <div className="page-header">
         <h2>Model Metrics</h2>
-        <p>Synthetic model metrics and the separately reported ULB real-world benchmark</p>
+        <p>MLP, LSTM, and IEEE-CIS benchmark results, reported by dataset</p>
       </div>
 
       <div style={{ marginBottom: 'var(--space-xl)' }}>
-        <BenchmarkRecords syntheticMetrics={mlpMetrics} syntheticFeatures={mlpModelInfo?.features_used} />
-      </div>
-      <div style={{ marginBottom: 'var(--space-xl)' }}>
-        <ULBMetricDetails />
+        <BenchmarkRecords mlpMetrics={mlpMetrics} mlpFeatures={mlpModelInfo?.features_used} ieeeInfo={ieeeModelInfo} />
       </div>
 
       {/* Tab Selector */}

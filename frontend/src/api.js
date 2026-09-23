@@ -35,8 +35,8 @@ export async function getModelInfo() {
   return requestJson('/model-info');
 }
 
-export async function getULBModelInfo() {
-  return requestJson('/model-info-ulb');
+export async function getIEEEModelInfo() {
+  return requestJson('/model-info-ieee');
 }
 
 export async function getLSTMModelInfo() {
@@ -63,12 +63,12 @@ export async function predictFraud(transaction) {
   return postJson('/predict', transaction);
 }
 
-export async function predictFraudULB(transaction) {
-  return postJson('/predict-ulb', transaction);
+export async function predictFraudIEEE(transaction) {
+  return postJson('/predict-ieee', transaction);
 }
 
-export async function predictFraudBatchULB(transactions) {
-  return postJson('/batch-predict-ulb', { transactions });
+export async function predictFraudBatchIEEE(transactions) {
+  return postJson('/batch-predict-ieee', { transactions });
 }
 
 export async function predictFraudLSTM(transaction) {
